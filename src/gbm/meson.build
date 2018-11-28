@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-inc_gbm = include_directories('.', 'backends/dri')
+inc_gbm = include_directories('.', 'main', 'backends/dri')
 
 files_gbm = files(
   'main/backend.c',
@@ -44,8 +44,6 @@ if with_platform_wayland
   deps_gbm += dep_wayland_server
   incs_gbm += inc_wayland_drm
 endif
-
-# TODO: wayland support (requires egl)
 
 libgbm = shared_library(
   'gbm',
@@ -74,6 +72,7 @@ if with_tests
   test(
     'gbm-symbols-check',
     find_program('gbm-symbols-check'),
+    env : env_test,
     args : libgbm
   )
 endif

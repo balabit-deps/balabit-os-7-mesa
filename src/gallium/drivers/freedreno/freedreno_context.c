@@ -47,6 +47,8 @@ fd_context_flush(struct pipe_context *pctx, struct pipe_fence_handle **fencep,
 	struct fd_context *ctx = fd_context(pctx);
 	struct pipe_fence_handle *fence = NULL;
 
+	DBG("%p: flush: flags=%x\n", ctx->batch, flags);
+
 	/* Take a ref to the batch's fence (batch can be unref'd when flushed: */
 	fd_fence_ref(pctx->screen, &fence, ctx->batch->fence);
 
@@ -78,6 +80,13 @@ fd_texture_barrier(struct pipe_context *pctx, unsigned flags)
 	fd_context_flush(pctx, NULL, 0);
 }
 
+static void
+fd_memory_barrier(struct pipe_context *pctx, unsigned flags)
+{
+	fd_context_flush(pctx, NULL, 0);
+	/* TODO do we need to check for persistently mapped buffers and fd_bo_cpu_prep()?? */
+}
+
 /**
  * emit marker string as payload of a no-op packet, which can be
  * decoded by cffdump.
@@ -91,6 +100,8 @@ fd_emit_string_marker(struct pipe_context *pctx, const char *string, int len)
 
 	if (!ctx->batch)
 		return;
+
+	ctx->batch->needs_flush = true;
 
 	ring = ctx->batch->draw;
 
@@ -293,6 +304,7 @@ fd_context_init(struct fd_context *ctx, struct pipe_screen *pscreen,
 	pctx->create_fence_fd = fd_create_fence_fd;
 	pctx->fence_server_sync = fd_fence_server_sync;
 	pctx->texture_barrier = fd_texture_barrier;
+	pctx->memory_barrier = fd_memory_barrier;
 
 	pctx->stream_uploader = u_upload_create_default(pctx);
 	if (!pctx->stream_uploader)

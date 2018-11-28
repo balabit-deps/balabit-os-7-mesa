@@ -68,6 +68,10 @@ files_swr_mesa = files(
   'rasterizer/jitter/builder.cpp',
   'rasterizer/jitter/builder.h',
   'rasterizer/jitter/builder_math.h',
+  'rasterizer/jitter/builder_mem.cpp',
+  'rasterizer/jitter/builder_mem.h',
+  'rasterizer/jitter/builder_gfx_mem.cpp',
+  'rasterizer/jitter/builder_gfx_mem.h',
   'rasterizer/jitter/builder_misc.cpp',
   'rasterizer/jitter/builder_misc.h',
   'rasterizer/jitter/fetch_jit.cpp',
@@ -77,6 +81,8 @@ files_swr_mesa = files(
   'rasterizer/jitter/JitManager.h',
   'rasterizer/jitter/streamout_jit.cpp',
   'rasterizer/jitter/streamout_jit.h',
+  'rasterizer/jitter/shader_lib/DebugOutput.cpp',
+  'rasterizer/jitter/functionpasses/lower_x86.cpp',
 )
 
 files_swr_arch = files(
@@ -125,6 +131,7 @@ files_swr_arch = files(
   'rasterizer/core/threads.h',
   'rasterizer/core/tilemgr.cpp',
   'rasterizer/core/tilemgr.h',
+  'rasterizer/core/tileset.h',
   'rasterizer/core/utils.h',
   'rasterizer/memory/ClearTile.cpp',
   'rasterizer/memory/Convert.h',
@@ -144,11 +151,14 @@ files_swr_arch = files(
   'rasterizer/memory/StoreTile_TileY.cpp',
   'rasterizer/memory/TilingFunctions.h',
   'rasterizer/memory/tilingtraits.h',
+  'rasterizer/memory/InitMemory.h',
+  'rasterizer/memory/InitMemory.cpp',
 )
 
 swr_context_files = files('swr_context.h')
 swr_state_files = files('rasterizer/core/state.h')
 swr_event_proto_files = files('rasterizer/archrast/events.proto')
+swr_event_pproto_files = files('rasterizer/archrast/events_private.proto')
 swr_gen_backend_files = files('rasterizer/codegen/templates/gen_backend.cpp')
 swr_gen_rasterizer_files = files('rasterizer/codegen/templates/gen_rasterizer.cpp')
 swr_gen_header_init_files = files('rasterizer/codegen/templates/gen_header_init.hpp')
@@ -198,6 +208,7 @@ if with_swr_arches.contains('avx')
     link_args : [ld_args_gc_sections],
     include_directories : [swr_incs],
     dependencies : [dep_thread, dep_llvm],
+    version : '0.0.0',
     install : true,
   )
 endif
@@ -230,6 +241,7 @@ if with_swr_arches.contains('avx2')
     link_args : [ld_args_gc_sections],
     include_directories : [swr_incs],
     dependencies : [dep_thread, dep_llvm],
+    version : '0.0.0',
     install : true,
   )
 endif
@@ -257,6 +269,7 @@ if with_swr_arches.contains('knl')
     link_args : [ld_args_gc_sections],
     include_directories : [swr_incs],
     dependencies : [dep_thread, dep_llvm],
+    version : '0.0.0',
     install : true,
   )
 endif
@@ -281,6 +294,7 @@ if with_swr_arches.contains('skx')
     link_args : [ld_args_gc_sections],
     include_directories : [swr_incs],
     dependencies : [dep_thread, dep_llvm],
+    version : '0.0.0',
     install : true,
   )
 endif
@@ -293,7 +307,7 @@ endif
 libmesaswr = static_library(
   'mesaswr',
   [files_swr_mesa, files_swr_common, gen_knobs_h, gen_knobs_cpp,
-   gen_builder_hpp, gen_builder_x86_hpp],
+   gen_builder_hpp, gen_builder_meta_hpp, gen_builder_intrin_hpp],
   cpp_args : [cpp_vis_args, swr_cpp_args, swr_avx_args, swr_arch_defines],
   include_directories : [inc_common, swr_incs],
   dependencies : dep_llvm,

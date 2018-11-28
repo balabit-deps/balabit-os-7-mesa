@@ -223,9 +223,6 @@ swrastFillInModes(__DRIscreen *psp,
     unsigned back_buffer_factor;
     mesa_format format;
 
-    /* GLX_SWAP_COPY_OML is only supported because the Intel driver doesn't
-     * support pageflipping at all.
-     */
     static const GLenum back_buffer_modes[] = {
 	__DRI_ATTRIB_SWAP_NONE, __DRI_ATTRIB_SWAP_UNDEFINED
     };
@@ -473,12 +470,16 @@ swrast_map_renderbuffer(struct gl_context *ctx,
 			GLuint x, GLuint y, GLuint w, GLuint h,
 			GLbitfield mode,
 			GLubyte **out_map,
-			GLint *out_stride)
+			GLint *out_stride,
+			bool flip_y)
 {
    struct dri_swrast_renderbuffer *xrb = dri_swrast_renderbuffer(rb);
    GLubyte *map = xrb->Base.Buffer;
    int cpp = _mesa_get_format_bytes(rb->Format);
    int stride = rb->Width * cpp;
+
+   /* driver does not support GL_FRAMEBUFFER_FLIP_Y_MESA */
+   assert((rb->Name == 0) == flip_y);
 
    if (rb->AllocStorage == swrast_alloc_front_storage) {
       __DRIdrawable *dPriv = xrb->dPriv;
@@ -678,6 +679,9 @@ swrast_check_and_update_window_size( struct gl_context *ctx, struct gl_framebuff
 {
     GLsizei width, height;
 
+    if (!fb)
+        return;
+
     get_window_size(fb, &width, &height);
     if (fb->Width != width || fb->Height != height) {
 	_mesa_resize_framebuffer(ctx, fb, width, height);
@@ -786,6 +790,7 @@ dri_create_context(gl_api api,
     /* build table of device driver functions */
     _mesa_init_driver_functions(&functions);
     swrast_init_driver_functions(&functions);
+    _tnl_init_driver_draw_function(&functions);
 
     if (share) {
 	sharedCtx = &share->Base;
@@ -859,30 +864,26 @@ dri_make_current(__DRIcontext * cPriv,
 		 __DRIdrawable * driReadPriv)
 {
     struct gl_context *mesaCtx;
-    struct gl_framebuffer *mesaDraw;
-    struct gl_framebuffer *mesaRead;
+    struct gl_framebuffer *mesaDraw = NULL;
+    struct gl_framebuffer *mesaRead = NULL;
     TRACE;
 
     if (cPriv) {
-	struct dri_context *ctx = dri_context(cPriv);
-	struct dri_drawable *draw;
-	struct dri_drawable *read;
+        mesaCtx = &dri_context(cPriv)->Base;
 
-	if (!driDrawPriv || !driReadPriv)
-	    return GL_FALSE;
+	if (driDrawPriv && driReadPriv) {
+           struct dri_drawable *draw = dri_drawable(driDrawPriv);
+           struct dri_drawable *read = dri_drawable(driReadPriv);
+           mesaDraw = &draw->Base;
+           mesaRead = &read->Base;
+        }
 
-	draw = dri_drawable(driDrawPriv);
-	read = dri_drawable(driReadPriv);
-	mesaCtx = &ctx->Base;
-	mesaDraw = &draw->Base;
-	mesaRead = &read->Base;
-
-	/* check for same context and buffer */
-	if (mesaCtx == _mesa_get_current_context()
-	    && mesaCtx->DrawBuffer == mesaDraw
-	    && mesaCtx->ReadBuffer == mesaRead) {
-	    return GL_TRUE;
-	}
+        /* check for same context and buffer */
+        if (mesaCtx == _mesa_get_current_context()
+            && mesaCtx->DrawBuffer == mesaDraw
+            && mesaCtx->ReadBuffer == mesaRead) {
+            return GL_TRUE;
+        }
 
 	_glapi_check_multithread();
 

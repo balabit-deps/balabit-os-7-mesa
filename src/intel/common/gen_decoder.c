@@ -35,6 +35,7 @@
 
 #include "gen_decoder.h"
 
+#include "isl/isl.h"
 #include "genxml/genX_xml.h"
 
 #define XML_BUFFER_SIZE 4096
@@ -150,7 +151,8 @@ static struct gen_group *
 create_group(struct parser_context *ctx,
              const char *name,
              const char **atts,
-             struct gen_group *parent)
+             struct gen_group *parent,
+             bool fixed_length)
 {
    struct gen_group *group;
 
@@ -160,6 +162,7 @@ create_group(struct parser_context *ctx,
 
    group->spec = ctx->spec;
    group->variable = false;
+   group->fixed_length = fixed_length;
 
    for (int i = 0; atts[i]; i += 2) {
       char *p;
@@ -369,18 +372,19 @@ start_element(void *data, const char *element_name, const char **atts)
          minor = 0;
 
       ctx->spec->gen = gen_make_gen(major, minor);
-   } else if (strcmp(element_name, "instruction") == 0 ||
-              strcmp(element_name, "struct") == 0) {
-      ctx->group = create_group(ctx, name, atts, NULL);
+   } else if (strcmp(element_name, "instruction") == 0) {
+      ctx->group = create_group(ctx, name, atts, NULL, false);
+   } else if (strcmp(element_name, "struct") == 0) {
+      ctx->group = create_group(ctx, name, atts, NULL, true);
    } else if (strcmp(element_name, "register") == 0) {
-      ctx->group = create_group(ctx, name, atts, NULL);
+      ctx->group = create_group(ctx, name, atts, NULL, true);
       get_register_offset(atts, &ctx->group->register_offset);
    } else if (strcmp(element_name, "group") == 0) {
       struct gen_group *previous_group = ctx->group;
       while (previous_group->next)
          previous_group = previous_group->next;
 
-      struct gen_group *group = create_group(ctx, "", atts, ctx->group);
+      struct gen_group *group = create_group(ctx, "", atts, ctx->group, false);
       previous_group->next = group;
       ctx->group = group;
    } else if (strcmp(element_name, "field") == 0) {
@@ -712,6 +716,9 @@ gen_group_find_field(struct gen_group *group, const char *name)
 int
 gen_group_get_length(struct gen_group *group, const uint32_t *p)
 {
+   if (group && group->fixed_length)
+      return group->dw_length;
+
    uint32_t h = p[0];
    uint32_t type = field_value(h, 29, 31);
 
@@ -805,6 +812,18 @@ iter_more_groups(const struct gen_field_iterator *iter)
 }
 
 static void
+iter_start_field(struct gen_field_iterator *iter, struct gen_field *field)
+{
+   iter->field = field;
+
+   int group_member_offset = iter_group_offset_bits(iter, iter->group_iter);
+
+   iter->start_bit = group_member_offset + iter->field->start;
+   iter->end_bit = group_member_offset + iter->field->end;
+   iter->struct_desc = NULL;
+}
+
+static void
 iter_advance_group(struct gen_field_iterator *iter)
 {
    if (iter->group->variable)
@@ -818,63 +837,55 @@ iter_advance_group(struct gen_field_iterator *iter)
       }
    }
 
-   iter->field = iter->group->fields;
+   iter_start_field(iter, iter->group->fields);
 }
 
 static bool
 iter_advance_field(struct gen_field_iterator *iter)
 {
    if (iter_more_fields(iter)) {
-      iter->field = iter->field->next;
+      iter_start_field(iter, iter->field->next);
    } else {
       if (!iter_more_groups(iter))
          return false;
 
       iter_advance_group(iter);
    }
-
-   if (iter->field->name)
-      strncpy(iter->name, iter->field->name, sizeof(iter->name));
-   else
-      memset(iter->name, 0, sizeof(iter->name));
-
-   int group_member_offset = iter_group_offset_bits(iter, iter->group_iter);
-
-   iter->bit = group_member_offset + iter->field->start;
-   iter->struct_desc = NULL;
-
    return true;
 }
 
-static uint64_t
-iter_decode_field_raw(struct gen_field_iterator *iter)
+static bool
+iter_decode_field_raw(struct gen_field_iterator *iter, uint64_t *qw)
 {
-   uint64_t qw = 0;
+   *qw = 0;
 
-   int field_start = iter->p_bit + iter->bit;
-   int field_end = field_start + (iter->field->end - iter->field->start);
+   int field_start = iter->p_bit + iter->start_bit;
+   int field_end = iter->p_bit + iter->end_bit;
 
-   const uint32_t *p = iter->p + (iter->bit / 32);
+   const uint32_t *p = iter->p + (iter->start_bit / 32);
+   if (iter->p_end && p >= iter->p_end)
+      return false;
+
    if ((field_end - field_start) > 32) {
-      if ((p + 1) < iter->p_end)
-         qw = ((uint64_t) p[1]) << 32;
-      qw |= p[0];
+      if (!iter->p_end || (p + 1) < iter->p_end)
+         *qw = ((uint64_t) p[1]) << 32;
+      *qw |= p[0];
    } else
-      qw = p[0];
+      *qw = p[0];
 
-   qw = field_value(qw, field_start, field_end);
+   *qw = field_value(*qw, field_start, field_end);
 
    /* Address & offset types have to be aligned to dwords, their start bit is
     * a reminder of the alignment requirement.
     */
    if (iter->field->type.kind == GEN_TYPE_ADDRESS ||
        iter->field->type.kind == GEN_TYPE_OFFSET)
-      qw <<= field_start % 32;
+      *qw <<= field_start % 32;
 
-   return qw;
+   return true;
 }
 
-static void
+static bool
 iter_decode_field(struct gen_field_iterator *iter)
 {
    union {
@@ -883,13 +894,14 @@ iter_decode_field(struct gen_field_iterator *iter)
    } v;
 
    if (iter->field->name)
-      strncpy(iter->name, iter->field->name, sizeof(iter->name));
+      snprintf(iter->name, sizeof(iter->name), "%s", iter->field->name);
    else
       memset(iter->name, 0, sizeof(iter->name));
 
    memset(&v, 0, sizeof(v));
 
-   iter->raw_value = iter_decode_field_raw(iter);
+   if (!iter_decode_field_raw(iter, &iter->raw_value))
+      return false;
 
    const char *enum_name = NULL;
 
@@ -954,7 +966,16 @@ iter_decode_field(struct gen_field_iterator *iter)
       int length = strlen(iter->value);
       snprintf(iter->value + length, sizeof(iter->value) - length,
                " (%s)", enum_name);
+   } else if (strcmp(iter->name, "Surface Format") == 0) {
+      if (isl_format_is_valid((enum isl_format)v.qw)) {
+         const char *fmt_name = isl_format_get_name((enum isl_format)v.qw);
+         int length = strlen(iter->value);
+         snprintf(iter->value + length, sizeof(iter->value) - length,
+                  " (%s)", fmt_name);
+      }
    }
+
+   return true;
 }
 
 void
@@ -966,25 +987,40 @@ gen_field_iterator_init(struct gen_field_iterator *iter,
    memset(iter, 0, sizeof(*iter));
 
    iter->group = group;
-   if (group->fields)
-      iter->field = group->fields;
-   else
-      iter->field = group->next->fields;
    iter->p = p;
    iter->p_bit = p_bit;
-   iter->p_end = &p[gen_group_get_length(iter->group, iter->p)];
-   iter->print_colors = print_colors;
 
-   iter_decode_field(iter);
+   int length = gen_group_get_length(iter->group, iter->p);
+   iter->p_end = length >= 0 ? &p[length] : NULL;
+   iter->print_colors = print_colors;
 }
 
 bool
 gen_field_iterator_next(struct gen_field_iterator *iter)
 {
+   /* Initial condition */
+   if (!iter->field) {
+      if (iter->group->fields)
+         iter_start_field(iter, iter->group->fields);
+      else
+         iter_start_field(iter, iter->group->next->fields);
+
+      bool result = iter_decode_field(iter);
+      if (!result && iter->p_end) {
+         /* We're dealing with a non empty struct of length=0 (BLEND_STATE on
+          * Gen 7.5)
+          */
+         assert(iter->group->dw_length == 0);
+      }
+
+      return result;
+   }
+
    if (!iter_advance_field(iter))
       return false;
 
-   iter_decode_field(iter);
+   if (!iter_decode_field(iter))
+      return false;
 
    return true;
 }
@@ -1020,8 +1056,8 @@ gen_print_group(FILE *outfile, struct gen_group *group, uint64_t offset,
    int last_dword = -1;
 
    gen_field_iterator_init(&iter, group, p, p_bit, color);
-   do {
-      int iter_dword = iter.bit / 32;
+   while (gen_field_iterator_next(&iter)) {
+      int iter_dword = iter.end_bit / 32;
       if (last_dword != iter_dword) {
          for (int i = last_dword + 1; i <= iter_dword; i++)
             print_dword_header(outfile, &iter, offset, i);
@@ -1030,10 +1066,11 @@ gen_print_group(FILE *outfile, struct gen_group *group, uint64_t offset,
       if (!gen_field_is_header(iter.field)) {
          fprintf(outfile, "    %s: %s\n", iter.name, iter.value);
          if (iter.struct_desc) {
-            uint64_t struct_offset = offset + 4 * iter_dword;
+            int struct_dword = iter.start_bit / 32;
+            uint64_t struct_offset = offset + 4 * struct_dword;
             gen_print_group(outfile, iter.struct_desc, struct_offset,
-                            &p[iter_dword], iter.bit % 32, color);
+                            &p[struct_dword], iter.start_bit % 32, color);
          }
       }
-   } while (gen_field_iterator_next(&iter));
+   }
 }

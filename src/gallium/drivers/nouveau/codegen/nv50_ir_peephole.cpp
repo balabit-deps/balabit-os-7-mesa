@@ -283,6 +283,8 @@ class IndirectPropagation : public Pass
 {
 private:
    virtual bool visit(BasicBlock *);
+
+   BuildUtil bld;
 };
 
 bool
@@ -293,6 +295,8 @@ IndirectPropagation::visit(BasicBlock *bb)
 
    for (Instruction *i = bb->getEntry(); i; i = next) {
       next = i->next;
+
+      bld.setPosition(i, false);
 
       for (int s = 0; i->srcExists(s); ++s) {
          Instruction *insn;
@@ -323,6 +327,14 @@ IndirectPropagation::visit(BasicBlock *bb)
                 !targ->insnCanLoadOffset(i, s, imm.reg.data.s32))
                continue;
             i->setIndirect(s, 0, NULL);
+            i->setSrc(s, cloneShallow(func, i->getSrc(s)));
+            i->src(s).get()->reg.data.offset += imm.reg.data.u32;
+         } else if (insn->op == OP_SHLADD) {
+            if (!insn->src(2).getImmediate(imm) ||
+                !targ->insnCanLoadOffset(i, s, imm.reg.data.s32))
+               continue;
+            i->setIndirect(s, 0, bld.mkOp2v(
+               OP_SHL, TYPE_U32, bld.getSSA(), insn->getSrc(0), insn->getSrc(1)));
             i->setSrc(s, cloneShallow(func, i->getSrc(s)));
             i->src(s).get()->reg.data.offset += imm.reg.data.u32;
          }
@@ -1055,7 +1067,8 @@ ConstantFolding::opnd(Instruction *i, ImmediateValue &imm0, int s)
       } else
       if (s == 1 && !imm0.isNegative() && imm0.isPow2() &&
           !isFloatType(i->dType) &&
-          target->isOpSupported(OP_SHLADD, i->dType)) {
+          target->isOpSupported(OP_SHLADD, i->dType) &&
+          !i->subOp) {
          i->op = OP_SHLADD;
          imm0.applyLog2();
          i->setSrc(1, new_ImmediateValue(prog, imm0.reg.data.u32));
@@ -1304,7 +1317,7 @@ ConstantFolding::opnd(Instruction *i, ImmediateValue &imm0, int s)
                  src->op == OP_SHR &&
                  src->src(1).getImmediate(imm1) &&
                  i->src(t).mod == Modifier(0) &&
-                 util_is_power_of_two(imm0.reg.data.u32 + 1)) {
+                 util_is_power_of_two_or_zero(imm0.reg.data.u32 + 1)) {
          // low byte = offset, high byte = width
          uint32_t ext = (util_last_bit(imm0.reg.data.u32) << 8) | imm1.reg.data.u32;
          i->op = OP_EXTBF;
@@ -1313,7 +1326,7 @@ ConstantFolding::opnd(Instruction *i, ImmediateValue &imm0, int s)
       } else if (src->op == OP_SHL &&
                  src->src(1).getImmediate(imm1) &&
                  i->src(t).mod == Modifier(0) &&
-                 util_is_power_of_two(~imm0.reg.data.u32 + 1) &&
+                 util_is_power_of_two_or_zero(~imm0.reg.data.u32 + 1) &&
                  util_last_bit(~imm0.reg.data.u32) <= imm1.reg.data.u32) {
          i->op = OP_MOV;
          i->setSrc(s, NULL);
@@ -1653,6 +1666,7 @@ ModifierFolding::visit(BasicBlock *bb)
 // SLCT(a, b, const) -> cc(const) ? a : b
 // RCP(RCP(a)) -> a
 // MUL(MUL(a, b), const) -> MUL_Xconst(a, b)
+// EXTBF(RDSV(COMBINED_TID)) -> RDSV(TID)
 class AlgebraicOpt : public Pass
 {
 private:
@@ -1670,6 +1684,7 @@ private:
    void handleCVT_EXTBF(Instruction *);
    void handleSUCLAMP(Instruction *);
    void handleNEG(Instruction *);
+   void handleEXTBF_RDSV(Instruction *);
 
    BuildUtil bld;
 };
@@ -2174,6 +2189,41 @@ AlgebraicOpt::handleNEG(Instruction *i) {
    }
 }
 
+// EXTBF(RDSV(COMBINED_TID)) -> RDSV(TID)
+void
+AlgebraicOpt::handleEXTBF_RDSV(Instruction *i)
+{
+   Instruction *rdsv = i->getSrc(0)->getUniqueInsn();
+   if (rdsv->op != OP_RDSV ||
+       rdsv->getSrc(0)->asSym()->reg.data.sv.sv != SV_COMBINED_TID)
+      return;
+   // Avoid creating more RDSV instructions
+   if (rdsv->getDef(0)->refCount() > 1)
+      return;
+
+   ImmediateValue imm;
+   if (!i->src(1).getImmediate(imm))
+      return;
+
+   int index;
+   if (imm.isInteger(0x1000))
+      index = 0;
+   else
+   if (imm.isInteger(0x0a10))
+      index = 1;
+   else
+   if (imm.isInteger(0x061a))
+      index = 2;
+   else
+      return;
+
+   bld.setPosition(i, false);
+
+   i->op = OP_RDSV;
+   i->setSrc(0, bld.mkSysVal(SV_TID, index));
+   i->setSrc(1, NULL);
+}
+
 bool
 AlgebraicOpt::visit(BasicBlock *bb)
 {
@@ -2213,6 +2263,9 @@ AlgebraicOpt::visit(BasicBlock *bb)
          break;
       case OP_NEG:
          handleNEG(i);
+         break;
+      case OP_EXTBF:
+         handleEXTBF_RDSV(i);
          break;
       default:
          break;
@@ -3431,6 +3484,11 @@ Instruction::isActionEqual(const Instruction *that) const
    } else
    if (this->asFlow()) {
       return false;
+   } else
+   if (this->op == OP_PHI && this->bb != that->bb) {
+      /* TODO: we could probably be a bit smarter here by following the
+       * control flow, but honestly, it is quite painful to check */
+      return false;
    } else {
       if (this->ipa != that->ipa ||
           this->lanes != that->lanes ||
@@ -3527,6 +3585,7 @@ GlobalCSE::visit(BasicBlock *bb)
             break;
       }
       if (!phi->srcExists(s)) {
+         assert(ik->op != OP_PHI);
          Instruction *entry = bb->getEntry();
          ik->bb->remove(ik);
          if (!entry || entry->op != OP_JOIN)
@@ -3796,11 +3855,11 @@ Program::optimizeSSA(int level)
    RUN_PASS(2, AlgebraicOpt, run);
    RUN_PASS(2, ModifierFolding, run); // before load propagation -> less checks
    RUN_PASS(1, ConstantFolding, foldAll);
-   RUN_PASS(1, Split64BitOpPreRA, run);
+   RUN_PASS(0, Split64BitOpPreRA, run);
+   RUN_PASS(2, LateAlgebraicOpt, run);
    RUN_PASS(1, LoadPropagation, run);
    RUN_PASS(1, IndirectPropagation, run);
    RUN_PASS(2, MemoryOpt, run);
-   RUN_PASS(2, LateAlgebraicOpt, run);
    RUN_PASS(2, LocalCSE, run);
    RUN_PASS(0, DeadCodeElim, buryAll);
 

@@ -66,6 +66,16 @@ files_libglsl = files(
   'builtin_types.cpp',
   'builtin_variables.cpp',
   'generate_ir.cpp',
+  'gl_nir_lower_atomics.c',
+  'gl_nir_lower_samplers.c',
+  'gl_nir_lower_samplers_as_deref.c',
+  'gl_nir_link_atomics.c',
+  'gl_nir_link_uniform_initializers.c',
+  'gl_nir_link_uniforms.c',
+  'gl_nir_link_xfb.c',
+  'gl_nir_linker.c',
+  'gl_nir_linker.h',
+  'gl_nir.h',
   'glsl_parser_extras.cpp',
   'glsl_parser_extras.h',
   'glsl_symbol_table.cpp',
@@ -108,6 +118,8 @@ files_libglsl = files(
   'ir_visitor.h',
   'linker.cpp',
   'linker.h',
+  'linker_util.h',
+  'linker_util.cpp',
   'link_atomics.cpp',
   'link_functions.cpp',
   'link_interface_blocks.cpp',
@@ -159,7 +171,6 @@ files_libglsl = files(
   'opt_constant_folding.cpp',
   'opt_constant_propagation.cpp',
   'opt_constant_variable.cpp',
-  'opt_copy_propagation.cpp',
   'opt_copy_propagation_elements.cpp',
   'opt_dead_builtin_variables.cpp',
   'opt_dead_builtin_varyings.cpp',
@@ -230,7 +241,8 @@ glsl_compiler = executable(
   dependencies : [dep_clock, dep_thread],
   include_directories : [inc_common],
   link_with : [libglsl_standalone],
-  build_by_default : false,
+  build_by_default : with_tools.contains('glsl'),
+  install : with_tools.contains('glsl'),
 )
 
 glsl_test = executable(
@@ -242,7 +254,8 @@ glsl_test = executable(
   include_directories : [inc_common],
   dependencies : [dep_clock, dep_thread],
   link_with : [libglsl, libglsl_standalone, libglsl_util],
-  build_by_default : false,
+  build_by_default : with_tools.contains('glsl'),
+  install : with_tools.contains('glsl'),
 )
 
 if with_tests

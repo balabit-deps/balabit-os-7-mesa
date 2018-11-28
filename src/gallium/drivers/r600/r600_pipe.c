@@ -71,6 +71,9 @@ static void r600_destroy_context(struct pipe_context *context)
 
 	r600_sb_context_destroy(rctx->sb_context);
 
+	for (sh = 0; sh < (rctx->b.chip_class < EVERGREEN ? R600_NUM_HW_STAGES : EG_NUM_HW_STAGES); sh++) {
+		r600_resource_reference(&rctx->scratch_buffers[sh].buffer, NULL);
+	}
 	r600_resource_reference(&rctx->dummy_cmask, NULL);
 	r600_resource_reference(&rctx->dummy_fmask, NULL);
 
@@ -340,6 +343,9 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 		   return 330;
 		return 140;
 
+	case PIPE_CAP_GLSL_FEATURE_LEVEL_COMPATIBILITY:
+		return 140;
+
 	/* Supported except the original R600. */
 	case PIPE_CAP_INDEP_BLEND_ENABLE:
 	case PIPE_CAP_INDEP_BLEND_FUNC:
@@ -356,6 +362,7 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 	case PIPE_CAP_TGSI_PACK_HALF_FLOAT:
 	case PIPE_CAP_TGSI_CLOCK:
 	case PIPE_CAP_TGSI_ARRAY_COMPONENTS:
+	case PIPE_CAP_QUERY_BUFFER_OBJECT:
 		return family >= CHIP_CEDAR ? 1 : 0;
 	case PIPE_CAP_MAX_TEXTURE_GATHER_COMPONENTS:
 		return family >= CHIP_CEDAR ? 4 : 0;
@@ -388,7 +395,6 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 	case PIPE_CAP_TGSI_FS_FACE_IS_INTEGER_SYSVAL:
 	case PIPE_CAP_GENERATE_MIPMAP:
 	case PIPE_CAP_STRING_MARKER:
-	case PIPE_CAP_QUERY_BUFFER_OBJECT:
 	case PIPE_CAP_PRIMITIVE_RESTART_FOR_PATCHES:
 	case PIPE_CAP_TGSI_VOTE:
 	case PIPE_CAP_MAX_WINDOW_RECTANGLES:
@@ -413,6 +419,17 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 	case PIPE_CAP_TILE_RASTER_ORDER:
 	case PIPE_CAP_SIGNED_VERTEX_BUFFER_OFFSET:
 	case PIPE_CAP_CONTEXT_PRIORITY_MASK:
+	case PIPE_CAP_FENCE_SIGNAL:
+	case PIPE_CAP_CONSTBUF0_FLAGS:
+	case PIPE_CAP_PACKED_UNIFORMS:
+	case PIPE_CAP_FRAMEBUFFER_MSAA_CONSTRAINTS:
+	case PIPE_CAP_CONSERVATIVE_RASTER_POST_SNAP_TRIANGLES:
+	case PIPE_CAP_CONSERVATIVE_RASTER_POST_SNAP_POINTS_LINES:
+	case PIPE_CAP_CONSERVATIVE_RASTER_PRE_SNAP_TRIANGLES:
+	case PIPE_CAP_CONSERVATIVE_RASTER_PRE_SNAP_POINTS_LINES:
+	case PIPE_CAP_CONSERVATIVE_RASTER_POST_DEPTH_COVERAGE:
+	case PIPE_CAP_MAX_CONSERVATIVE_RASTER_SUBPIXEL_PRECISION_BIAS:
+	case PIPE_CAP_PROGRAMMABLE_SAMPLE_LOCATIONS:
 		return 0;
 
 	case PIPE_CAP_DOUBLES:
@@ -454,7 +471,8 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 		return family >= CHIP_CEDAR ? 4 : 1;
 
 	case PIPE_CAP_MAX_VERTEX_ATTRIB_STRIDE:
-		return 2047;
+		/* Should be 2047, but 2048 is a requirement for GL 4.4 */
+		return 2048;
 
 	/* Texturing. */
 	case PIPE_CAP_MAX_TEXTURE_2D_LEVELS:
@@ -598,15 +616,15 @@ static int r600_get_shader_param(struct pipe_screen* pscreen,
 	case PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS:
 		return 16;
         case PIPE_SHADER_CAP_PREFERRED_IR:
-		if (shader == PIPE_SHADER_COMPUTE) {
-			return PIPE_SHADER_IR_NATIVE;
-		} else {
-			return PIPE_SHADER_IR_TGSI;
-		}
-	case PIPE_SHADER_CAP_SUPPORTED_IRS:
+		return PIPE_SHADER_IR_TGSI;
+	case PIPE_SHADER_CAP_SUPPORTED_IRS: {
+		int ir = 0;
+		if (shader == PIPE_SHADER_COMPUTE)
+			ir = 1 << PIPE_SHADER_IR_NATIVE;
 		if (rscreen->b.family >= CHIP_CEDAR)
-			return (1 << PIPE_SHADER_IR_TGSI);
-		return 0;
+			ir |= 1 << PIPE_SHADER_IR_TGSI;
+		return ir;
+	}
 	case PIPE_SHADER_CAP_TGSI_FMA_SUPPORTED:
 		if (rscreen->b.family == CHIP_ARUBA ||
 		    rscreen->b.family == CHIP_CAYMAN ||
@@ -636,6 +654,8 @@ static int r600_get_shader_param(struct pipe_screen* pscreen,
 		if (rscreen->b.family >= CHIP_CEDAR && rscreen->has_atomics) {
 			return EG_MAX_ATOMIC_BUFFERS;
 		}
+		return 0;
+	case PIPE_SHADER_CAP_SCALAR_ISA:
 		return 0;
 	case PIPE_SHADER_CAP_MAX_UNROLL_ITERATIONS_HINT:
 		/* due to a bug in the shader compiler, some loops hang
@@ -763,7 +783,7 @@ struct pipe_screen *r600_screen_create(struct radeon_winsys *ws,
 		R600_CONTEXT_INV_VERTEX_CACHE |
 		R600_CONTEXT_INV_TEX_CACHE |
 		R600_CONTEXT_INV_CONST_CACHE;
-	rscreen->b.barrier_flags.compute_to_L2 = R600_CONTEXT_PS_PARTIAL_FLUSH;
+	rscreen->b.barrier_flags.compute_to_L2 = R600_CONTEXT_CS_PARTIAL_FLUSH | R600_CONTEXT_FLUSH_AND_INV;
 
 	rscreen->global_pool = compute_memory_pool_new(rscreen);
 

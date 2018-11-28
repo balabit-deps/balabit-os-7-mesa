@@ -33,10 +33,8 @@
  * to give about the same results. Around 5 instructions per node.  But some
  * loops that would unroll with GLSL IR fail to unroll if we set this to 25 so
  * we set it to 26.
- * This was bumped to 96 because it unrolled more loops with a positive
- * effect (vulkan ssao demo).
  */
-#define LOOP_UNROLL_LIMIT 96
+#define LOOP_UNROLL_LIMIT 26
 
 /* Prepare this loop for unrolling by first converting to lcssa and then
  * converting the phis from the top level of the loop body to regs.
@@ -51,6 +49,9 @@
 static void
 loop_prepare_for_unroll(nir_loop *loop)
 {
+   nir_rematerialize_derefs_in_use_blocks_impl(
+      nir_cf_node_get_function(&loop->cf_node));
+
    nir_convert_loop_to_lcssa(loop);
 
    /* Lower phis at the top level of the loop body */
@@ -532,14 +533,14 @@ process_loops(nir_shader *sh, nir_cf_node *cf_node, bool *innermost_loop)
          if (num_lt == 2) {
             bool limiting_term_second = true;
             nir_loop_terminator *terminator =
-               list_last_entry(&loop->info->loop_terminator_list,
+               list_first_entry(&loop->info->loop_terminator_list,
                                 nir_loop_terminator, loop_terminator_link);
 
 
             if (terminator->nif == loop->info->limiting_terminator->nif) {
                limiting_term_second = false;
                terminator =
-                  list_first_entry(&loop->info->loop_terminator_list,
+                  list_last_entry(&loop->info->loop_terminator_list,
                                   nir_loop_terminator, loop_terminator_link);
             }
 
@@ -580,6 +581,10 @@ nir_opt_loop_unroll_impl(nir_function_impl *impl,
    return progress;
 }
 
+/**
+ * indirect_mask specifies which type of indirectly accessed variables
+ * should force loop unrolling.
+ */
 bool
 nir_opt_loop_unroll(nir_shader *shader, nir_variable_mode indirect_mask)
 {

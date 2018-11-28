@@ -44,12 +44,15 @@ enum ir3_driver_param {
 	IR3_DP_NUM_WORK_GROUPS_X = 0,
 	IR3_DP_NUM_WORK_GROUPS_Y = 1,
 	IR3_DP_NUM_WORK_GROUPS_Z = 2,
+	IR3_DP_LOCAL_GROUP_SIZE_X = 4,
+	IR3_DP_LOCAL_GROUP_SIZE_Y = 5,
+	IR3_DP_LOCAL_GROUP_SIZE_Z = 6,
 	/* NOTE: gl_NumWorkGroups should be vec4 aligned because
 	 * glDispatchComputeIndirect() needs to load these from
 	 * the info->indirect buffer.  Keep that in mind when/if
 	 * adding any addition CS driver params.
 	 */
-	IR3_DP_CS_COUNT   = 4,   /* must be aligned to vec4 */
+	IR3_DP_CS_COUNT   = 8,   /* must be aligned to vec4 */
 
 	/* vertex shader driver params: */
 	IR3_DP_VTXID_BASE = 0,
@@ -140,6 +143,9 @@ struct ir3_shader_key {
 	 */
 	uint16_t fsaturate_s, fsaturate_t, fsaturate_r;
 
+	/* bitmask of ms shifts */
+	uint32_t vsamples, fsamples;
+
 	/* bitmask of samplers which need astc srgb workaround: */
 	uint16_t vastc_srgb, fastc_srgb;
 };
@@ -161,6 +167,7 @@ ir3_shader_key_changes_fs(struct ir3_shader_key *key, struct ir3_shader_key *las
 		if ((last_key->fsaturate_s != key->fsaturate_s) ||
 				(last_key->fsaturate_t != key->fsaturate_t) ||
 				(last_key->fsaturate_r != key->fsaturate_r) ||
+				(last_key->fsamples != key->fsamples) ||
 				(last_key->fastc_srgb != key->fastc_srgb))
 			return true;
 	}
@@ -191,6 +198,7 @@ ir3_shader_key_changes_vs(struct ir3_shader_key *key, struct ir3_shader_key *las
 		if ((last_key->vsaturate_s != key->vsaturate_s) ||
 				(last_key->vsaturate_t != key->vsaturate_t) ||
 				(last_key->vsaturate_r != key->vsaturate_r) ||
+				(last_key->vsamples != key->vsamples) ||
 				(last_key->vastc_srgb != key->vastc_srgb))
 			return true;
 	}
@@ -373,7 +381,7 @@ ir3_shader_create_compute(struct ir3_compiler *compiler,
 void ir3_shader_destroy(struct ir3_shader *shader);
 struct ir3_shader_variant * ir3_shader_variant(struct ir3_shader *shader,
 		struct ir3_shader_key key, struct pipe_debug_callback *debug);
-void ir3_shader_disasm(struct ir3_shader_variant *so, uint32_t *bin);
+void ir3_shader_disasm(struct ir3_shader_variant *so, uint32_t *bin, FILE *out);
 uint64_t ir3_shader_outputs(const struct ir3_shader *so);
 
 struct fd_ringbuffer;
@@ -517,6 +525,15 @@ ir3_find_sysval_regid(const struct ir3_shader_variant *so, unsigned slot)
 		if (so->inputs[j].sysval && (so->inputs[j].slot == slot))
 			return so->inputs[j].regid;
 	return regid(63, 0);
+}
+
+/* calculate register footprint in terms of half-regs (ie. one full
+ * reg counts as two half-regs).
+ */
+static inline uint32_t
+ir3_shader_halfregs(const struct ir3_shader_variant *v)
+{
+	return (2 * (v->info.max_reg + 1)) + (v->info.max_half_reg + 1);
 }
 
 #endif /* IR3_SHADER_H_ */

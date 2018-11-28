@@ -134,7 +134,9 @@ def check_cc(env, cc, expr, cpp_opt = '-E'):
     source.write('#if !(%s)\n#error\n#endif\n' % expr)
     source.close()
 
-    pipe = SCons.Action._subproc(env, [env['CC'], cpp_opt, source.name],
+    # sys.stderr.write('%r %s %s\n' % (env['CC'], cpp_opt, source.name));
+
+    pipe = SCons.Action._subproc(env, env.Split(env['CC']) + [cpp_opt, source.name],
                                  stdin = 'devnull',
                                  stderr = 'devnull',
                                  stdout = 'devnull')
@@ -390,10 +392,6 @@ def generate(env):
         cppdefines += ['PIPE_SUBSYSTEM_WINDOWS_USER']
     if env['embedded']:
         cppdefines += ['PIPE_SUBSYSTEM_EMBEDDED']
-    if env['texture_float']:
-        print('warning: Floating-point textures enabled.')
-        print('warning: Please consult docs/patents.txt with your lawyer before building Mesa.')
-        cppdefines += ['TEXTURE_FLOAT_ENABLED']
     env.Append(CPPDEFINES = cppdefines)
 
     # C compiler options

@@ -54,6 +54,7 @@
 #include "ast.h"
 #include "compiler/glsl_types.h"
 #include "util/hash_table.h"
+#include "main/mtypes.h"
 #include "main/macros.h"
 #include "main/shaderobj.h"
 #include "ir.h"
@@ -1117,6 +1118,8 @@ do_comparison(void *mem_ctx, int operation, ir_rvalue *op0, ir_rvalue *op1)
    case GLSL_TYPE_INT64:
    case GLSL_TYPE_UINT16:
    case GLSL_TYPE_INT16:
+   case GLSL_TYPE_UINT8:
+   case GLSL_TYPE_INT8:
       return new(mem_ctx) ir_expression(operation, op0, op1);
 
    case GLSL_TYPE_ARRAY: {
@@ -1394,8 +1397,7 @@ ast_expression::do_hir(exec_list *instructions,
 
    switch (this->oper) {
    case ast_aggregate:
-      assert(!"ast_aggregate: Should never get here.");
-      break;
+      unreachable("ast_aggregate: Should never get here.");
 
    case ast_assign: {
       this->subexpressions[0]->set_is_lhs(true);
@@ -1848,9 +1850,11 @@ ast_expression::do_hir(exec_list *instructions,
        *   expressions; such use results in a compile-time error."
        */
       if (type->contains_opaque()) {
-         _mesa_glsl_error(&loc, state, "opaque variables cannot be operands "
-                          "of the ?: operator");
-         error_emitted = true;
+         if (!(state->has_bindless() && (type->is_image() || type->is_sampler()))) {
+            _mesa_glsl_error(&loc, state, "variables of type %s cannot be "
+                             "operands of the ?: operator", type->name);
+            error_emitted = true;
+         }
       }
 
       ir_constant *cond_val = op[0]->constant_expression_value(ctx);
@@ -1924,6 +1928,11 @@ ast_expression::do_hir(exec_list *instructions,
 
       error_emitted = op[0]->type->is_error() || op[1]->type->is_error();
 
+      if (error_emitted) {
+         result = ir_rvalue::error_value(ctx);
+         break;
+      }
+
       type = arithmetic_result_type(op[0], op[1], false, state, & loc);
 
       ir_rvalue *temp_rhs;
@@ -1971,15 +1980,13 @@ ast_expression::do_hir(exec_list *instructions,
    }
 
    case ast_unsized_array_dim:
-      assert(!"ast_unsized_array_dim: Should never get here.");
-      break;
+      unreachable("ast_unsized_array_dim: Should never get here.");
 
    case ast_function_call:
       /* Should *NEVER* get here.  ast_function_call should always be handled
        * by ast_function_expression::hir.
        */
-      assert(0);
-      break;
+      unreachable("ast_function_call: handled elsewhere ");
 
    case ast_identifier: {
       /* ast_identifier can appear several places in a full abstract syntax
@@ -2008,6 +2015,20 @@ ast_expression::do_hir(exec_list *instructions,
             _mesa_glsl_warning(&loc, state, "`%s' used uninitialized",
                                this->primary_expression.identifier);
          }
+
+         /* From the EXT_shader_framebuffer_fetch spec:
+          *
+          *   "Unless the GL_EXT_shader_framebuffer_fetch extension has been
+          *    enabled in addition, it's an error to use gl_LastFragData if it
+          *    hasn't been explicitly redeclared with layout(noncoherent)."
+          */
+         if (var->data.fb_fetch_output && var->data.memory_coherent &&
+             !state->EXT_shader_framebuffer_fetch_enable) {
+            _mesa_glsl_error(&loc, state,
+                             "invalid use of framebuffer fetch output not "
+                             "qualified with layout(noncoherent)");
+         }
+
       } else {
          _mesa_glsl_error(& loc, state, "`%s' undeclared",
                           this->primary_expression.identifier);
@@ -3883,6 +3904,16 @@ apply_layout_qualifier_to_variable(const struct ast_type_qualifier *qual,
 
    if (state->has_bindless())
       apply_bindless_qualifier_to_variable(qual, var, state, loc);
+
+   if (qual->flags.q.pixel_interlock_ordered ||
+       qual->flags.q.pixel_interlock_unordered ||
+       qual->flags.q.sample_interlock_ordered ||
+       qual->flags.q.sample_interlock_unordered) {
+      _mesa_glsl_error(loc, state, "interlock layout qualifiers: "
+                       "pixel_interlock_ordered, pixel_interlock_unordered, "
+                       "sample_interlock_ordered and sample_interlock_unordered, "
+                       "only valid in fragment shader input layout declaration.");
+   }
 }
 
 static void
@@ -3994,8 +4025,41 @@ apply_type_qualifier_to_variable(const struct ast_type_qualifier *qual,
    else if (qual->flags.q.shared_storage)
       var->data.mode = ir_var_shader_shared;
 
-   var->data.fb_fetch_output = state->stage == MESA_SHADER_FRAGMENT &&
-                               qual->flags.q.in && qual->flags.q.out;
+   if (!is_parameter && state->has_framebuffer_fetch() &&
+       state->stage == MESA_SHADER_FRAGMENT) {
+      if (state->is_version(130, 300))
+         var->data.fb_fetch_output = qual->flags.q.in && qual->flags.q.out;
+      else
+         var->data.fb_fetch_output = (strcmp(var->name, "gl_LastFragData") == 0);
+   }
+
+   if (var->data.fb_fetch_output) {
+      var->data.assigned = true;
+      var->data.memory_coherent = !qual->flags.q.non_coherent;
+
+      /* From the EXT_shader_framebuffer_fetch spec:
+       *
+       *   "It is an error to declare an inout fragment output not qualified
+       *    with layout(noncoherent) if the GL_EXT_shader_framebuffer_fetch
+       *    extension hasn't been enabled."
+       */
+      if (var->data.memory_coherent &&
+          !state->EXT_shader_framebuffer_fetch_enable)
+         _mesa_glsl_error(loc, state,
+                          "invalid declaration of framebuffer fetch output not "
+                          "qualified with layout(noncoherent)");
+
+   } else {
+      /* From the EXT_shader_framebuffer_fetch spec:
+       *
+       *   "Fragment outputs declared inout may specify the following layout
+       *    qualifier: [...] noncoherent"
+       */
+      if (qual->flags.q.non_coherent)
+         _mesa_glsl_error(loc, state,
+                          "invalid layout(noncoherent) qualifier not part of "
+                          "framebuffer fetch output declaration");
+   }
 
    if (!is_parameter && is_varying_var(var, state->stage)) {
       /* User-defined ins/outs are not permitted in compute shaders. */
@@ -4263,8 +4327,12 @@ get_variable_being_redeclared(ir_variable **var_ptr, YYLTYPE loc,
        *   "By default, gl_LastFragData is declared with the mediump precision
        *    qualifier. This can be changed by redeclaring the corresponding
        *    variables with the desired precision qualifier."
+       *
+       *   "Fragment shaders may specify the following layout qualifier only for
+       *    redeclaring the built-in gl_LastFragData array [...]: noncoherent"
        */
       earlier->data.precision = var->data.precision;
+      earlier->data.memory_coherent = var->data.memory_coherent;
 
    } else if (earlier->data.how_declared == ir_var_declared_implicitly &&
               state->allow_builtin_variable_redeclaration) {

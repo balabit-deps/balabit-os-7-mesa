@@ -34,6 +34,7 @@
 #include "tgsi/tgsi_dump.h"
 #include "tgsi/tgsi_info.h"
 #include "tgsi/tgsi_scan.h"
+#include "tgsi/tgsi_from_mesa.h"
 
 #define SWIZ(X, Y, Z, W) (unsigned[4]){      \
       TGSI_SWIZZLE_##X,                      \
@@ -486,27 +487,15 @@ ttn_src_for_indirect(struct ttn_compile *c, struct tgsi_ind_register *indirect);
 /* generate either a constant or indirect deref chain for accessing an
  * array variable.
  */
-static nir_deref_var *
-ttn_array_deref(struct ttn_compile *c, nir_intrinsic_instr *instr,
-                nir_variable *var, unsigned offset,
+static nir_deref_instr *
+ttn_array_deref(struct ttn_compile *c, nir_variable *var, unsigned offset,
                 struct tgsi_ind_register *indirect)
 {
-   nir_deref_var *deref = nir_deref_var_create(instr, var);
-   nir_deref_array *arr = nir_deref_array_create(deref);
-
-   arr->base_offset = offset;
-   arr->deref.type = glsl_get_array_element(var->type);
-
-   if (indirect) {
-      arr->deref_array_type = nir_deref_array_type_indirect;
-      arr->indirect = nir_src_for_ssa(ttn_src_for_indirect(c, indirect));
-   } else {
-      arr->deref_array_type = nir_deref_array_type_direct;
-   }
-
-   deref->deref.child = &arr->deref;
-
-   return deref;
+   nir_deref_instr *deref = nir_build_deref_var(&c->build, var);
+   nir_ssa_def *index = nir_imm_int(&c->build, offset);
+   if (indirect)
+      index = nir_iadd(&c->build, index, ttn_src_for_indirect(c, indirect));
+   return nir_build_deref_array(&c->build, deref, index);
 }
 
 static nir_src
@@ -525,18 +514,10 @@ ttn_src_for_file_and_index(struct ttn_compile *c, unsigned file, unsigned index,
       if (c->temp_regs[index].var) {
          unsigned offset = c->temp_regs[index].offset;
          nir_variable *var = c->temp_regs[index].var;
-         nir_intrinsic_instr *load;
+         nir_ssa_def *load = nir_load_deref(&c->build,
+               ttn_array_deref(c, var, offset, indirect));
 
-         load = nir_intrinsic_instr_create(b->shader,
-                                           nir_intrinsic_load_var);
-         load->num_components = 4;
-         load->variables[0] = ttn_array_deref(c, load, var, offset, indirect);
-         nir_ssa_dest_init(&load->instr, &load->dest,
-                           4, 32, NULL);
-         nir_builder_instr_insert(b, &load->instr);
-
-         src = nir_src_for_ssa(&load->dest.ssa);
-
+         src = nir_src_for_ssa(load);
       } else {
          assert(!indirect);
          src.reg.reg = c->temp_regs[index].reg;
@@ -772,8 +753,8 @@ ttn_get_src(struct ttn_compile *c, struct tgsi_full_src_register *tgsi_fsrc,
 {
    nir_builder *b = &c->build;
    struct tgsi_src_register *tgsi_src = &tgsi_fsrc->Register;
-   unsigned tgsi_opcode = c->token->FullInstruction.Instruction.Opcode;
-   unsigned tgsi_src_type = tgsi_opcode_infer_src_type(tgsi_opcode, src_idx);
+   enum tgsi_opcode opcode = c->token->FullInstruction.Instruction.Opcode;
+   unsigned tgsi_src_type = tgsi_opcode_infer_src_type(opcode, src_idx);
    bool src_is_float = !(tgsi_src_type == TGSI_TYPE_SIGNED ||
                          tgsi_src_type == TGSI_TYPE_UNSIGNED);
    nir_alu_src src;
@@ -1828,17 +1809,11 @@ ttn_emit_instruction(struct ttn_compile *c)
    if (var) {
       unsigned index = tgsi_dst->Register.Index;
       unsigned offset = c->temp_regs[index].offset;
-      nir_intrinsic_instr *store =
-         nir_intrinsic_instr_create(b->shader, nir_intrinsic_store_var);
       struct tgsi_ind_register *indirect = tgsi_dst->Register.Indirect ?
                                            &tgsi_dst->Indirect : NULL;
-
-      store->num_components = 4;
-      nir_intrinsic_set_write_mask(store, dest.write_mask);
-      store->variables[0] = ttn_array_deref(c, store, var, offset, indirect);
-      store->src[0] = nir_src_for_reg(dest.dest.reg.reg);
-
-      nir_builder_instr_insert(b, &store->instr);
+      nir_src val = nir_src_for_reg(dest.dest.reg.reg);
+      nir_store_deref(b, ttn_array_deref(c, var, offset, indirect),
+                      nir_ssa_for_src(b, val, 4), dest.write_mask);
    }
 }
 
@@ -1884,21 +1859,6 @@ ttn_add_output_stores(struct ttn_compile *c)
          store->src[1] = nir_src_for_ssa(nir_imm_int(b, 0));
          nir_builder_instr_insert(b, &store->instr);
       }
-   }
-}
-
-static gl_shader_stage
-tgsi_processor_to_shader_stage(unsigned processor)
-{
-   switch (processor) {
-   case PIPE_SHADER_FRAGMENT:  return MESA_SHADER_FRAGMENT;
-   case PIPE_SHADER_VERTEX:    return MESA_SHADER_VERTEX;
-   case PIPE_SHADER_GEOMETRY:  return MESA_SHADER_GEOMETRY;
-   case PIPE_SHADER_TESS_CTRL: return MESA_SHADER_TESS_CTRL;
-   case PIPE_SHADER_TESS_EVAL: return MESA_SHADER_TESS_EVAL;
-   case PIPE_SHADER_COMPUTE:   return MESA_SHADER_COMPUTE;
-   default:
-      unreachable("invalid TGSI processor");
    }
 }
 

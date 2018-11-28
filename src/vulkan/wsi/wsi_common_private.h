@@ -35,10 +35,12 @@ struct wsi_image {
       VkCommandBuffer *blit_cmd_buffers;
    } prime;
 
-   uint32_t size;
-   uint32_t offset;
-   uint32_t row_pitch;
-   int fd;
+   uint64_t drm_modifier;
+   int num_planes;
+   uint32_t sizes[4];
+   uint32_t offsets[4];
+   uint32_t row_pitches[4];
+   int fds[4];
 };
 
 struct wsi_swapchain {
@@ -60,7 +62,7 @@ struct wsi_swapchain {
    struct wsi_image *(*get_wsi_image)(struct wsi_swapchain *swapchain,
                                       uint32_t image_index);
    VkResult (*acquire_next_image)(struct wsi_swapchain *swap_chain,
-                                  uint64_t timeout, VkSemaphore semaphore,
+                                  const VkAcquireNextImageInfoKHR *info,
                                   uint32_t *image_index);
    VkResult (*queue_present)(struct wsi_swapchain *swap_chain,
                              uint32_t image_index,
@@ -79,11 +81,15 @@ void wsi_swapchain_finish(struct wsi_swapchain *chain);
 VkResult
 wsi_create_native_image(const struct wsi_swapchain *chain,
                         const VkSwapchainCreateInfoKHR *pCreateInfo,
+                        uint32_t num_modifier_lists,
+                        const uint32_t *num_modifiers,
+                        const uint64_t *const *modifiers,
                         struct wsi_image *image);
 
 VkResult
 wsi_create_prime_image(const struct wsi_swapchain *chain,
                        const VkSwapchainCreateInfoKHR *pCreateInfo,
+                       bool use_modifier,
                        struct wsi_image *image);
 
 void
@@ -98,8 +104,6 @@ struct wsi_interface {
                            uint32_t queueFamilyIndex,
                            int local_fd,
                            VkBool32* pSupported);
-   VkResult (*get_capabilities)(VkIcdSurfaceBase *surface,
-                                VkSurfaceCapabilitiesKHR* pSurfaceCapabilities);
    VkResult (*get_capabilities2)(VkIcdSurfaceBase *surface,
                                  const void *info_next,
                                  VkSurfaceCapabilities2KHR* pSurfaceCapabilities);
@@ -134,6 +138,15 @@ VkResult wsi_wl_init_wsi(struct wsi_device *wsi_device,
 void wsi_wl_finish_wsi(struct wsi_device *wsi_device,
                        const VkAllocationCallbacks *alloc);
 
+
+VkResult
+wsi_display_init_wsi(struct wsi_device *wsi_device,
+                     const VkAllocationCallbacks *alloc,
+                     int display_fd);
+
+void
+wsi_display_finish_wsi(struct wsi_device *wsi_device,
+                       const VkAllocationCallbacks *alloc);
 
 #define WSI_DEFINE_NONDISP_HANDLE_CASTS(__wsi_type, __VkType)              \
                                                                            \

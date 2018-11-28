@@ -57,6 +57,12 @@ pack_header = """%(license)s
 #ifndef __gen_field_functions
 #define __gen_field_functions
 
+#ifdef NDEBUG
+#define NDEBUG_UNUSED __attribute__((unused))
+#else
+#define NDEBUG_UNUSED
+#endif
+
 union __gen_value {
    float f;
    uint32_t dw;
@@ -69,7 +75,7 @@ __gen_mbo(uint32_t start, uint32_t end)
 }
 
 static inline uint64_t
-__gen_uint(uint64_t v, uint32_t start, uint32_t end)
+__gen_uint(uint64_t v, uint32_t start, NDEBUG_UNUSED uint32_t end)
 {
    __gen_validate_value(v);
 
@@ -105,7 +111,7 @@ __gen_sint(int64_t v, uint32_t start, uint32_t end)
 }
 
 static inline uint64_t
-__gen_offset(uint64_t v, uint32_t start, uint32_t end)
+__gen_offset(uint64_t v, NDEBUG_UNUSED uint32_t start, NDEBUG_UNUSED uint32_t end)
 {
    __gen_validate_value(v);
 #ifndef NDEBUG
@@ -144,7 +150,7 @@ __gen_sfixed(float v, uint32_t start, uint32_t end, uint32_t fract_bits)
 }
 
 static inline uint64_t
-__gen_ufixed(float v, uint32_t start, uint32_t end, uint32_t fract_bits)
+__gen_ufixed(float v, uint32_t start, NDEBUG_UNUSED uint32_t end, uint32_t fract_bits)
 {
    __gen_validate_value(v);
 
@@ -168,6 +174,8 @@ __gen_ufixed(float v, uint32_t start, uint32_t end, uint32_t fract_bits)
 #ifndef __gen_user_data
 #error #define __gen_combine_address before including this file
 #endif
+
+#undef NDEBUG_UNUSED
 
 #endif
 
@@ -212,7 +220,7 @@ def num_from_str(num_str):
     if num_str.lower().startswith('0x'):
         return int(num_str, base=16)
     else:
-        assert(not num_str.startswith('0') and 'octals numbers not allowed')
+        assert not num_str.startswith('0'), 'octals numbers not allowed'
         return int(num_str)
 
 class Field(object):
@@ -227,13 +235,21 @@ class Field(object):
         self.end = int(attrs["end"])
         self.type = attrs["type"]
 
+        assert self.start <= self.end, \
+               'field {} has end ({}) < start ({})'.format(self.name, self.end,
+                                                           self.start)
+        if self.type == 'bool':
+            assert self.end == self.start, \
+                   'bool field ({}) is too wide'.format(self.name)
+
         if "prefix" in attrs:
             self.prefix = attrs["prefix"]
         else:
             self.prefix = None
 
         if "default" in attrs:
-            self.default = int(attrs["default"])
+            # Base 0 recognizes 0x, 0o, 0b prefixes in addition to decimal ints.
+            self.default = int(attrs["default"], base=0)
         else:
             self.default = None
 
@@ -486,8 +502,12 @@ class Group(object):
                 v_address = "v%d_address" % index
                 print("   const uint64_t %s =\n      __gen_combine_address(data, &dw[%d], values->%s, %s);" %
                       (v_address, index, dw.address.name + field.dim, v))
-                v = v_address
-
+                if len(dw.fields) > address_count:
+                    print("   dw[%d] = %s;" % (index, v_address))
+                    print("   dw[%d] = (%s >> 32) | (%s >> 32);" % (index + 1, v_address, v))
+                    continue
+                else:
+                    v = v_address
             print("   dw[%d] = %s;" % (index, v))
             print("   dw[%d] = %s >> 32;" % (index + 1, v))
 

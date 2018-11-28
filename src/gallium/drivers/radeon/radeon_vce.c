@@ -389,7 +389,7 @@ struct pipe_video_codec *si_vce_create_encoder(struct pipe_context *context,
 					       rvce_get_buffer get_buffer)
 {
 	struct si_screen *sscreen = (struct si_screen *)context->screen;
-	struct r600_common_context *rctx = (struct r600_common_context*)context;
+	struct si_context *sctx = (struct si_context*)context;
 	struct rvce_encoder *enc;
 	struct pipe_video_buffer *tmp_buf, templat = {};
 	struct radeon_surf *tmp_surf;
@@ -416,7 +416,8 @@ struct pipe_video_codec *si_vce_create_encoder(struct pipe_context *context,
 	if (sscreen->info.family >= CHIP_TONGA &&
 	    sscreen->info.family != CHIP_STONEY &&
 	    sscreen->info.family != CHIP_POLARIS11 &&
-	    sscreen->info.family != CHIP_POLARIS12)
+	    sscreen->info.family != CHIP_POLARIS12 &&
+	    sscreen->info.family != CHIP_VEGAM)
 		enc->dual_pipe = true;
 	/* TODO enable B frame with dual instance */
 	if ((sscreen->info.family >= CHIP_TONGA) &&
@@ -437,7 +438,7 @@ struct pipe_video_codec *si_vce_create_encoder(struct pipe_context *context,
 
 	enc->screen = context->screen;
 	enc->ws = ws;
-	enc->cs = ws->cs_create(rctx->ctx, RING_VCE, rvce_cs_flush, enc);
+	enc->cs = ws->cs_create(sctx->ctx, RING_VCE, rvce_cs_flush, enc);
 	if (!enc->cs) {
 		RVID_ERR("Can't get command submission context.\n");
 		goto error;
@@ -505,7 +506,7 @@ struct pipe_video_codec *si_vce_create_encoder(struct pipe_context *context,
 		break;
 
 	default:
-		if ((sscreen->info.vce_fw_version & (0xff << 24)) == FW_53) {
+		if ((sscreen->info.vce_fw_version & (0xff << 24)) >= FW_53) {
 			si_vce_52_init(enc);
 			si_get_pic_param = si_vce_52_get_param;
 		} else
@@ -541,7 +542,7 @@ bool si_vce_is_fw_version_supported(struct si_screen *sscreen)
 	case FW_52_8_3:
 		return true;
 	default:
-		if ((sscreen->info.vce_fw_version & (0xff << 24)) == FW_53)
+		if ((sscreen->info.vce_fw_version & (0xff << 24)) >= FW_53)
 			return true;
 		else
 			return false;
@@ -558,7 +559,7 @@ void si_vce_add_buffer(struct rvce_encoder *enc, struct pb_buffer *buf,
 	int reloc_idx;
 
 	reloc_idx = enc->ws->cs_add_buffer(enc->cs, buf, usage | RADEON_USAGE_SYNCHRONIZED,
-					   domain, RADEON_PRIO_VCE);
+					   domain, 0);
 	if (enc->use_vm) {
 		uint64_t addr;
 		addr = enc->ws->buffer_get_virtual_address(buf);

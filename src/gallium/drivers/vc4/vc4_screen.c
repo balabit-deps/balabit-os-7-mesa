@@ -148,6 +148,9 @@ vc4_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
         case PIPE_CAP_TEXTURE_BARRIER:
                 return 1;
 
+        case PIPE_CAP_NATIVE_FENCE_FD:
+                return screen->has_syncobj;
+
         case PIPE_CAP_TILE_RASTER_ORDER:
                 return vc4_has_feature(screen,
                                        DRM_VC4_PARAM_SUPPORTS_FIXED_RCL_ORDER);
@@ -161,6 +164,7 @@ vc4_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
                 return 256;
 
         case PIPE_CAP_GLSL_FEATURE_LEVEL:
+	case PIPE_CAP_GLSL_FEATURE_LEVEL_COMPATIBILITY:
                 return 120;
 
         case PIPE_CAP_MAX_VIEWPORTS:
@@ -263,7 +267,6 @@ vc4_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
         case PIPE_CAP_VIEWPORT_SUBPIXEL_BITS:
         case PIPE_CAP_TGSI_ARRAY_COMPONENTS:
         case PIPE_CAP_TGSI_CAN_READ_OUTPUTS:
-        case PIPE_CAP_NATIVE_FENCE_FD:
         case PIPE_CAP_TGSI_FS_FBFETCH:
         case PIPE_CAP_TGSI_MUL_ZERO_WINS:
         case PIPE_CAP_DOUBLES:
@@ -284,8 +287,19 @@ vc4_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
         case PIPE_CAP_LOAD_CONSTBUF:
         case PIPE_CAP_TGSI_ANY_REG_AS_ADDRESS:
         case PIPE_CAP_MAX_COMBINED_SHADER_OUTPUT_RESOURCES:
+	case PIPE_CAP_FRAMEBUFFER_MSAA_CONSTRAINTS:
         case PIPE_CAP_SIGNED_VERTEX_BUFFER_OFFSET:
         case PIPE_CAP_CONTEXT_PRIORITY_MASK:
+        case PIPE_CAP_FENCE_SIGNAL:
+        case PIPE_CAP_CONSTBUF0_FLAGS:
+        case PIPE_CAP_CONSERVATIVE_RASTER_POST_SNAP_TRIANGLES:
+        case PIPE_CAP_CONSERVATIVE_RASTER_POST_SNAP_POINTS_LINES:
+        case PIPE_CAP_CONSERVATIVE_RASTER_PRE_SNAP_TRIANGLES:
+        case PIPE_CAP_CONSERVATIVE_RASTER_PRE_SNAP_POINTS_LINES:
+        case PIPE_CAP_CONSERVATIVE_RASTER_POST_DEPTH_COVERAGE:
+        case PIPE_CAP_MAX_CONSERVATIVE_RASTER_SUBPIXEL_PRECISION_BIAS:
+        case PIPE_CAP_PACKED_UNIFORMS:
+        case PIPE_CAP_PROGRAMMABLE_SAMPLE_LOCATIONS:
                 return 0;
 
                 /* Stream output. */
@@ -372,10 +386,10 @@ vc4_screen_get_paramf(struct pipe_screen *pscreen, enum pipe_capf param)
                 return 0.0f;
         case PIPE_CAPF_MAX_TEXTURE_LOD_BIAS:
                 return 0.0f;
-        case PIPE_CAPF_GUARD_BAND_LEFT:
-        case PIPE_CAPF_GUARD_BAND_TOP:
-        case PIPE_CAPF_GUARD_BAND_RIGHT:
-        case PIPE_CAPF_GUARD_BAND_BOTTOM:
+
+        case PIPE_CAPF_MIN_CONSERVATIVE_RASTER_DILATE:
+        case PIPE_CAPF_MAX_CONSERVATIVE_RASTER_DILATE:
+        case PIPE_CAPF_CONSERVATIVE_RASTER_DILATE_GRANULARITY:
                 return 0.0f;
         default:
                 fprintf(stderr, "unknown paramf %d\n", param);
@@ -452,6 +466,8 @@ vc4_screen_get_shader_param(struct pipe_screen *pscreen,
         case PIPE_SHADER_CAP_MAX_HW_ATOMIC_COUNTERS:
         case PIPE_SHADER_CAP_MAX_HW_ATOMIC_COUNTER_BUFFERS:
                 return 0;
+        case PIPE_SHADER_CAP_SCALAR_ISA:
+                return 1;
         default:
                 fprintf(stderr, "unknown shader param %d\n", param);
                 return 0;
@@ -464,16 +480,18 @@ vc4_screen_is_format_supported(struct pipe_screen *pscreen,
                                enum pipe_format format,
                                enum pipe_texture_target target,
                                unsigned sample_count,
+                               unsigned storage_sample_count,
                                unsigned usage)
 {
         struct vc4_screen *screen = vc4_screen(pscreen);
-        unsigned retval = 0;
+
+        if (MAX2(1, sample_count) != MAX2(1, storage_sample_count))
+                return false;
 
         if (sample_count > 1 && sample_count != VC4_MAX_SAMPLES)
                 return FALSE;
 
-        if ((target >= PIPE_MAX_TEXTURE_TYPES) ||
-            !util_format_is_supported(format, usage)) {
+        if (target >= PIPE_MAX_TEXTURE_TYPES) {
                 return FALSE;
         }
 
@@ -523,46 +541,36 @@ vc4_screen_is_format_supported(struct pipe_screen *pscreen,
                 case PIPE_FORMAT_R8G8B8_SSCALED:
                 case PIPE_FORMAT_R8G8_SSCALED:
                 case PIPE_FORMAT_R8_SSCALED:
-                        retval |= PIPE_BIND_VERTEX_BUFFER;
                         break;
                 default:
-                        break;
+                        return FALSE;
                 }
         }
 
         if ((usage & PIPE_BIND_RENDER_TARGET) &&
-            vc4_rt_format_supported(format)) {
-                retval |= PIPE_BIND_RENDER_TARGET;
+            !vc4_rt_format_supported(format)) {
+                return FALSE;
         }
 
         if ((usage & PIPE_BIND_SAMPLER_VIEW) &&
-            vc4_tex_format_supported(format) &&
-            (format != PIPE_FORMAT_ETC1_RGB8 || screen->has_etc1)) {
-                retval |= PIPE_BIND_SAMPLER_VIEW;
+            (!vc4_tex_format_supported(format) ||
+             (format == PIPE_FORMAT_ETC1_RGB8 && !screen->has_etc1))) {
+                return FALSE;
         }
 
         if ((usage & PIPE_BIND_DEPTH_STENCIL) &&
-            (format == PIPE_FORMAT_S8_UINT_Z24_UNORM ||
-             format == PIPE_FORMAT_X8Z24_UNORM)) {
-                retval |= PIPE_BIND_DEPTH_STENCIL;
+            format != PIPE_FORMAT_S8_UINT_Z24_UNORM &&
+            format != PIPE_FORMAT_X8Z24_UNORM) {
+                return FALSE;
         }
 
         if ((usage & PIPE_BIND_INDEX_BUFFER) &&
-            (format == PIPE_FORMAT_I8_UINT ||
-             format == PIPE_FORMAT_I16_UINT)) {
-                retval |= PIPE_BIND_INDEX_BUFFER;
+            format != PIPE_FORMAT_I8_UINT &&
+            format != PIPE_FORMAT_I16_UINT) {
+                return FALSE;
         }
 
-#if 0
-        if (retval != usage) {
-                fprintf(stderr,
-                        "not supported: format=%s, target=%d, sample_count=%d, "
-                        "usage=0x%x, retval=0x%x\n", util_format_name(format),
-                        target, sample_count, usage, retval);
-        }
-#endif
-
-        return retval == usage;
+        return TRUE;
 }
 
 static void
@@ -661,7 +669,9 @@ struct pipe_screen *
 vc4_screen_create(int fd, struct renderonly *ro)
 {
         struct vc4_screen *screen = rzalloc(NULL, struct vc4_screen);
+        uint64_t syncobj_cap = 0;
         struct pipe_screen *pscreen;
+        int err;
 
         pscreen = &screen->base;
 
@@ -694,6 +704,12 @@ vc4_screen_create(int fd, struct renderonly *ro)
                 vc4_has_feature(screen, DRM_VC4_PARAM_SUPPORTS_THREADED_FS);
         screen->has_madvise =
                 vc4_has_feature(screen, DRM_VC4_PARAM_SUPPORTS_MADVISE);
+        screen->has_perfmon_ioctl =
+                vc4_has_feature(screen, DRM_VC4_PARAM_SUPPORTS_PERFMON);
+
+        err = drmGetCap(fd, DRM_CAP_SYNCOBJ, &syncobj_cap);
+        if (err == 0 && syncobj_cap)
+                screen->has_syncobj = true;
 
         if (!vc4_get_chip_info(screen))
                 goto fail;
@@ -702,7 +718,7 @@ vc4_screen_create(int fd, struct renderonly *ro)
 
         slab_create_parent(&screen->transfer_pool, sizeof(struct vc4_transfer), 16);
 
-        vc4_fence_init(screen);
+        vc4_fence_screen_init(screen);
 
         vc4_debug = debug_get_option_vc4_debug();
         if (vc4_debug & VC4_DEBUG_SHADERDB)
@@ -719,6 +735,11 @@ vc4_screen_create(int fd, struct renderonly *ro)
         pscreen->get_device_vendor = vc4_screen_get_vendor;
         pscreen->get_compiler_options = vc4_screen_get_compiler_options;
         pscreen->query_dmabuf_modifiers = vc4_screen_query_dmabuf_modifiers;
+
+        if (screen->has_perfmon_ioctl) {
+                pscreen->get_driver_query_group_info = vc4_get_driver_query_group_info;
+                pscreen->get_driver_query_info = vc4_get_driver_query_info;
+        }
 
         return pscreen;
 

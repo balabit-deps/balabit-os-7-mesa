@@ -44,10 +44,14 @@ brw_type_for_base_type(const struct glsl_type *type)
       return BRW_REGISTER_TYPE_D;
    case GLSL_TYPE_INT16:
       return BRW_REGISTER_TYPE_W;
+   case GLSL_TYPE_INT8:
+      return BRW_REGISTER_TYPE_B;
    case GLSL_TYPE_UINT:
       return BRW_REGISTER_TYPE_UD;
    case GLSL_TYPE_UINT16:
       return BRW_REGISTER_TYPE_UW;
+   case GLSL_TYPE_UINT8:
+      return BRW_REGISTER_TYPE_UB;
    case GLSL_TYPE_ARRAY:
       return brw_type_for_base_type(type->fields.array);
    case GLSL_TYPE_STRUCT:
@@ -292,6 +296,9 @@ brw_instruction_name(const struct gen_device_info *devinfo, enum opcode op)
       return "typed_surface_write_logical";
    case SHADER_OPCODE_MEMORY_FENCE:
       return "memory_fence";
+   case SHADER_OPCODE_INTERLOCK:
+      /* For an interlock we actually issue a memory fence via sendc. */
+      return "interlock";
 
    case SHADER_OPCODE_BYTE_SCATTERED_READ:
       return "byte_scattered_read";
@@ -330,6 +337,14 @@ brw_instruction_name(const struct gen_device_info *devinfo, enum opcode op)
       return "find_live_channel";
    case SHADER_OPCODE_BROADCAST:
       return "broadcast";
+   case SHADER_OPCODE_SHUFFLE:
+      return "shuffle";
+   case SHADER_OPCODE_SEL_EXEC:
+      return "sel_exec";
+   case SHADER_OPCODE_QUAD_SWIZZLE:
+      return "quad_swizzle";
+   case SHADER_OPCODE_CLUSTER_BROADCAST:
+      return "cluster_broadcast";
 
    case SHADER_OPCODE_GET_BUFFER_SIZE:
       return "get_buffer_size";
@@ -366,8 +381,6 @@ brw_instruction_name(const struct gen_device_info *devinfo, enum opcode op)
    case FS_OPCODE_DDY_FINE:
       return "ddy_fine";
 
-   case FS_OPCODE_CINTERP:
-      return "cinterp";
    case FS_OPCODE_LINTERP:
       return "linterp";
 
@@ -387,8 +400,6 @@ brw_instruction_name(const struct gen_device_info *devinfo, enum opcode op)
    case FS_OPCODE_VARYING_PULL_CONSTANT_LOAD_LOGICAL:
       return "varying_pull_const_logical";
 
-   case FS_OPCODE_MOV_DISPATCH_TO_FLAGS:
-      return "mov_dispatch_to_flags";
    case FS_OPCODE_DISCARD_JUMP:
       return "discard_jump";
 
@@ -541,6 +552,8 @@ brw_saturate_immediate(enum brw_reg_type type, struct brw_reg *reg)
       unreachable("unimplemented: saturate vector immediate");
    case BRW_REGISTER_TYPE_HF:
       unreachable("unimplemented: saturate HF immediate");
+   case BRW_REGISTER_TYPE_NF:
+      unreachable("no NF immediates");
    }
 
    if (size < 8) {
@@ -591,7 +604,10 @@ brw_negate_immediate(enum brw_reg_type type, struct brw_reg *reg)
    case BRW_REGISTER_TYPE_V:
       assert(!"unimplemented: negate UV/V immediate");
    case BRW_REGISTER_TYPE_HF:
-      assert(!"unimplemented: negate HF immediate");
+      reg->ud ^= 0x80008000;
+      return true;
+   case BRW_REGISTER_TYPE_NF:
+      unreachable("no NF immediates");
    }
 
    return false;
@@ -635,7 +651,10 @@ brw_abs_immediate(enum brw_reg_type type, struct brw_reg *reg)
    case BRW_REGISTER_TYPE_V:
       assert(!"unimplemented: abs V immediate");
    case BRW_REGISTER_TYPE_HF:
-      assert(!"unimplemented: abs HF immediate");
+      reg->ud &= ~0x80008000;
+      return true;
+   case BRW_REGISTER_TYPE_NF:
+      unreachable("no NF immediates");
    }
 
    return false;
@@ -668,6 +687,12 @@ bool
 backend_reg::equals(const backend_reg &r) const
 {
    return brw_regs_equal(this, &r) && offset == r.offset;
+}
+
+bool
+backend_reg::negative_equals(const backend_reg &r) const
+{
+   return brw_regs_negative_equal(this, &r) && offset == r.offset;
 }
 
 bool
@@ -843,6 +868,7 @@ backend_instruction::can_do_source_mods() const
    case BRW_OPCODE_FBL:
    case BRW_OPCODE_SUBB:
    case SHADER_OPCODE_BROADCAST:
+   case SHADER_OPCODE_CLUSTER_BROADCAST:
    case SHADER_OPCODE_MOV_INDIRECT:
       return false;
    default:
@@ -933,7 +959,6 @@ backend_instruction::can_do_cmod() const
    case BRW_OPCODE_SHR:
    case BRW_OPCODE_SUBB:
    case BRW_OPCODE_XOR:
-   case FS_OPCODE_CINTERP:
    case FS_OPCODE_LINTERP:
       return true;
    default:
@@ -960,8 +985,9 @@ backend_instruction::writes_accumulator_implicitly(const struct gen_device_info 
    return writes_accumulator ||
           (devinfo->gen < 6 &&
            ((opcode >= BRW_OPCODE_ADD && opcode < BRW_OPCODE_NOP) ||
-            (opcode >= FS_OPCODE_DDX_COARSE && opcode <= FS_OPCODE_LINTERP &&
-             opcode != FS_OPCODE_CINTERP)));
+            (opcode >= FS_OPCODE_DDX_COARSE && opcode <= FS_OPCODE_LINTERP))) ||
+          (opcode == FS_OPCODE_LINTERP &&
+           (!devinfo->has_pln || devinfo->gen <= 6));
 }
 
 bool
@@ -980,12 +1006,14 @@ backend_instruction::has_side_effects() const
    case SHADER_OPCODE_TYPED_SURFACE_WRITE:
    case SHADER_OPCODE_TYPED_SURFACE_WRITE_LOGICAL:
    case SHADER_OPCODE_MEMORY_FENCE:
+   case SHADER_OPCODE_INTERLOCK:
    case SHADER_OPCODE_URB_WRITE_SIMD8:
    case SHADER_OPCODE_URB_WRITE_SIMD8_PER_SLOT:
    case SHADER_OPCODE_URB_WRITE_SIMD8_MASKED:
    case SHADER_OPCODE_URB_WRITE_SIMD8_MASKED_PER_SLOT:
    case FS_OPCODE_FB_WRITE:
    case FS_OPCODE_FB_WRITE_LOGICAL:
+   case FS_OPCODE_REP_FB_WRITE:
    case SHADER_OPCODE_BARRIER:
    case TCS_OPCODE_URB_WRITE:
    case TCS_OPCODE_RELEASE_INPUT:
@@ -1167,7 +1195,7 @@ brw_compile_tes(const struct brw_compiler *compiler,
 
    nir = brw_nir_apply_sampler_key(nir, compiler, &key->tex, is_scalar);
    brw_nir_lower_tes_inputs(nir, input_vue_map);
-   brw_nir_lower_vue_outputs(nir, is_scalar);
+   brw_nir_lower_vue_outputs(nir);
    nir = brw_postprocess_nir(nir, compiler, is_scalar);
 
    brw_compute_vue_map(devinfo, &prog_data->base.vue_map,
@@ -1255,7 +1283,7 @@ brw_compile_tes(const struct brw_compiler *compiler,
       prog_data->base.base.dispatch_grf_start_reg = v.payload.num_regs;
       prog_data->base.dispatch_mode = DISPATCH_MODE_SIMD8;
 
-      fs_generator g(compiler, log_data, mem_ctx, (void *) key,
+      fs_generator g(compiler, log_data, mem_ctx,
                      &prog_data->base.base, v.promoted_constants, false,
                      MESA_SHADER_TESS_EVAL);
       if (unlikely(INTEL_DEBUG & DEBUG_TES)) {
@@ -1268,7 +1296,7 @@ brw_compile_tes(const struct brw_compiler *compiler,
 
       g.generate_code(v.cfg, 8);
 
-      assembly = g.get_assembly(&prog_data->base.base.program_size);
+      assembly = g.get_assembly();
    } else {
       brw::vec4_tes_visitor v(compiler, log_data, key, prog_data,
 			      nir, mem_ctx, shader_time_index);
@@ -1282,8 +1310,7 @@ brw_compile_tes(const struct brw_compiler *compiler,
 	 v.dump_instructions();
 
       assembly = brw_vec4_generate_assembly(compiler, log_data, mem_ctx, nir,
-                                            &prog_data->base, v.cfg,
-                                            &prog_data->base.base.program_size);
+                                            &prog_data->base, v.cfg);
    }
 
    return assembly;

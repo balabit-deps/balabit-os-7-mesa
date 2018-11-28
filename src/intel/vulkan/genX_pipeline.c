@@ -91,13 +91,14 @@ emit_vertex_input(struct anv_pipeline *pipeline,
 
    /* Pull inputs_read out of the VS prog data */
    const uint64_t inputs_read = vs_prog_data->inputs_read;
-   const uint64_t double_inputs_read = vs_prog_data->double_inputs_read;
+   const uint64_t double_inputs_read =
+      vs_prog_data->double_inputs_read & inputs_read;
    assert((inputs_read & ((1 << VERT_ATTRIB_GENERIC0) - 1)) == 0);
    const uint32_t elements = inputs_read >> VERT_ATTRIB_GENERIC0;
    const uint32_t elements_double = double_inputs_read >> VERT_ATTRIB_GENERIC0;
    const bool needs_svgs_elem = vs_prog_data->uses_vertexid ||
                                 vs_prog_data->uses_instanceid ||
-                                vs_prog_data->uses_basevertex ||
+                                vs_prog_data->uses_firstvertex ||
                                 vs_prog_data->uses_baseinstance;
 
    uint32_t elem_count = __builtin_popcount(elements) -
@@ -115,7 +116,34 @@ emit_vertex_input(struct anv_pipeline *pipeline,
                        GENX(3DSTATE_VERTEX_ELEMENTS));
    if (!p)
       return;
-   memset(p + 1, 0, (num_dwords - 1) * 4);
+
+   for (uint32_t i = 0; i < total_elems; i++) {
+      /* The SKL docs for VERTEX_ELEMENT_STATE say:
+       *
+       *    "All elements must be valid from Element[0] to the last valid
+       *    element. (I.e. if Element[2] is valid then Element[1] and
+       *    Element[0] must also be valid)."
+       *
+       * The SKL docs for 3D_Vertex_Component_Control say:
+       *
+       *    "Don't store this component. (Not valid for Component 0, but can
+       *    be used for Component 1-3)."
+       *
+       * So we can't just leave a vertex element blank and hope for the best.
+       * We have to tell the VF hardware to put something in it; so we just
+       * store a bunch of zero.
+       *
+       * TODO: Compact vertex elements so we never end up with holes.
+       */
+      struct GENX(VERTEX_ELEMENT_STATE) element = {
+         .Valid = true,
+         .Component0Control = VFCOMP_STORE_0,
+         .Component1Control = VFCOMP_STORE_0,
+         .Component2Control = VFCOMP_STORE_0,
+         .Component3Control = VFCOMP_STORE_0,
+      };
+      GENX(VERTEX_ELEMENT_STATE_pack)(NULL, &p[1 + i * 2], &element);
+   }
 
    for (uint32_t i = 0; i < info->vertexAttributeDescriptionCount; i++) {
       const VkVertexInputAttributeDescription *desc =
@@ -138,7 +166,7 @@ emit_vertex_input(struct anv_pipeline *pipeline,
       struct GENX(VERTEX_ELEMENT_STATE) element = {
          .VertexBufferIndex = desc->binding,
          .Valid = true,
-         .SourceElementFormat = (enum GENX(SURFACE_FORMAT)) format,
+         .SourceElementFormat = format,
          .EdgeFlagEnable = false,
          .SourceElementOffset = desc->offset,
          .Component0Control = vertex_element_comp_control(format, 0),
@@ -154,14 +182,10 @@ emit_vertex_input(struct anv_pipeline *pipeline,
        * VERTEX_BUFFER_STATE which we emit later.
        */
       anv_batch_emit(&pipeline->batch, GENX(3DSTATE_VF_INSTANCING), vfi) {
-         vfi.InstancingEnable = pipeline->instancing_enable[desc->binding];
+         vfi.InstancingEnable = pipeline->vb[desc->binding].instanced;
          vfi.VertexElementIndex = slot;
-         /* Our implementation of VK_KHX_multiview uses instancing to draw
-          * the different views.  If the client asks for instancing, we
-          * need to use the Instance Data Step Rate to ensure that we
-          * repeat the client's per-instance data once for each view.
-          */
-         vfi.InstanceDataStepRate = anv_subpass_view_count(pipeline->subpass);
+         vfi.InstanceDataStepRate =
+            pipeline->vb[desc->binding].instance_divisor;
       }
 #endif
    }
@@ -177,14 +201,14 @@ emit_vertex_input(struct anv_pipeline *pipeline,
        * This means, that if we have BaseInstance, we need BaseVertex as
        * well.  Just do all or nothing.
        */
-      uint32_t base_ctrl = (vs_prog_data->uses_basevertex ||
+      uint32_t base_ctrl = (vs_prog_data->uses_firstvertex ||
                             vs_prog_data->uses_baseinstance) ?
                            VFCOMP_STORE_SRC : VFCOMP_STORE_0;
 
       struct GENX(VERTEX_ELEMENT_STATE) element = {
          .VertexBufferIndex = ANV_SVGS_VB_INDEX,
          .Valid = true,
-         .SourceElementFormat = (enum GENX(SURFACE_FORMAT)) ISL_FORMAT_R32G32_UINT,
+         .SourceElementFormat = ISL_FORMAT_R32G32_UINT,
          .Component0Control = base_ctrl,
          .Component1Control = base_ctrl,
 #if GEN_GEN >= 8
@@ -214,7 +238,7 @@ emit_vertex_input(struct anv_pipeline *pipeline,
       struct GENX(VERTEX_ELEMENT_STATE) element = {
          .VertexBufferIndex = ANV_DRAWID_VB_INDEX,
          .Valid = true,
-         .SourceElementFormat = (enum GENX(SURFACE_FORMAT)) ISL_FORMAT_R32_UINT,
+         .SourceElementFormat = ISL_FORMAT_R32_UINT,
          .Component0Control = VFCOMP_STORE_SRC,
          .Component1Control = VFCOMP_STORE_0,
          .Component2Control = VFCOMP_STORE_0,
@@ -499,9 +523,9 @@ emit_rs_state(struct anv_pipeline *pipeline,
    /* Gen7 requires that we provide the depth format in 3DSTATE_SF so that it
     * can get the depth offsets correct.
     */
-   if (subpass->depth_stencil_attachment.attachment < pass->attachment_count) {
+   if (subpass->depth_stencil_attachment) {
       VkFormat vk_format =
-         pass->attachments[subpass->depth_stencil_attachment.attachment].format;
+         pass->attachments[subpass->depth_stencil_attachment->attachment].format;
       assert(vk_format_is_depth_or_stencil(vk_format));
       if (vk_format_aspects(vk_format) & VK_IMAGE_ASPECT_DEPTH_BIT) {
          enum isl_format isl_format =
@@ -816,9 +840,9 @@ emit_ds_state(struct anv_pipeline *pipeline,
    }
 
    VkImageAspectFlags ds_aspects = 0;
-   if (subpass->depth_stencil_attachment.attachment != VK_ATTACHMENT_UNUSED) {
+   if (subpass->depth_stencil_attachment) {
       VkFormat depth_stencil_format =
-         pass->attachments[subpass->depth_stencil_attachment.attachment].format;
+         pass->attachments[subpass->depth_stencil_attachment->attachment].format;
       ds_aspects = vk_format_aspects(depth_stencil_format);
    }
 
@@ -1135,7 +1159,9 @@ emit_3dstate_vs(struct anv_pipeline *pipeline)
 #endif
 
       assert(!vs_prog_data->base.base.use_alt_mode);
+#if GEN_GEN < 11
       vs.SingleVertexDispatch       = false;
+#endif
       vs.VectorMaskEnable           = false;
       vs.SamplerCount               = get_sampler_count(vs_bin);
       vs.BindingTableEntryCount     = get_binding_table_entry_count(vs_bin);
@@ -1143,7 +1169,28 @@ emit_3dstate_vs(struct anv_pipeline *pipeline)
       vs.IllegalOpcodeExceptionEnable = false;
       vs.SoftwareExceptionEnable    = false;
       vs.MaximumNumberofThreads     = devinfo->max_vs_threads - 1;
-      vs.VertexCacheDisable         = false;
+
+      if (GEN_GEN == 9 && devinfo->gt == 4 &&
+          anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL)) {
+         /* On Sky Lake GT4, we have experienced some hangs related to the VS
+          * cache and tessellation.  It is unknown exactly what is happening
+          * but the Haswell docs for the "VS Reference Count Full Force Miss
+          * Enable" field of the "Thread Mode" register refer to a HSW bug in
+          * which the VUE handle reference count would overflow resulting in
+          * internal reference counting bugs.  My (Jason's) best guess is that
+          * this bug cropped back up on SKL GT4 when we suddenly had more
+          * threads in play than any previous gen9 hardware.
+          *
+          * What we do know for sure is that setting this bit when
+          * tessellation shaders are in use fixes a GPU hang in Batman: Arkham
+          * City when playing with DXVK (https://bugs.freedesktop.org/107280).
+          * Disabling the vertex cache with tessellation shaders should only
+          * have a minor performance impact as the tessellation shaders are
+          * likely generating and processing far more geometry than the vertex
+          * stage.
+          */
+         vs.VertexCacheDisable = true;
+      }
 
       vs.VertexURBEntryReadLength      = vs_prog_data->base.urb_read_length;
       vs.VertexURBEntryReadOffset      = 0;
@@ -1251,10 +1298,15 @@ emit_3dstate_hs_te_ds(struct anv_pipeline *pipeline,
          tes_prog_data->base.base.dispatch_grf_start_reg;
 
 #if GEN_GEN >= 8
+#if GEN_GEN < 11
       ds.DispatchMode =
          tes_prog_data->base.dispatch_mode == DISPATCH_MODE_SIMD8 ?
             DISPATCH_MODE_SIMD8_SINGLE_PATCH :
             DISPATCH_MODE_SIMD4X2;
+#else
+      assert(tes_prog_data->base.dispatch_mode == DISPATCH_MODE_SIMD8);
+      ds.DispatchMode = DISPATCH_MODE_SIMD8_SINGLE_PATCH;
+#endif
 
       ds.UserClipDistanceClipTestEnableBitmask =
          tes_prog_data->base.clip_distance_mask;
@@ -1354,7 +1406,7 @@ has_color_buffer_write_enabled(const struct anv_pipeline *pipeline,
       if (binding->index == UINT32_MAX)
          continue;
 
-      if (blend->pAttachments[binding->index].colorWriteMask != 0)
+      if (blend && blend->pAttachments[binding->index].colorWriteMask != 0)
          return true;
    }
 
@@ -1385,6 +1437,28 @@ emit_3dstate_wm(struct anv_pipeline *pipeline, struct anv_subpass *subpass,
          } else {
             wm.EarlyDepthStencilControl         = EDSC_NORMAL;
          }
+
+#if GEN_GEN >= 8
+         /* Gen8 hardware tries to compute ThreadDispatchEnable for us but
+          * doesn't take into account KillPixels when no depth or stencil
+          * writes are enabled.  In order for occlusion queries to work
+          * correctly with no attachments, we need to force-enable PS thread
+          * dispatch.
+          *
+          * The BDW docs are pretty clear that that this bit isn't validated
+          * and probably shouldn't be used in production:
+          *
+          *    "This must always be set to Normal. This field should not be
+          *    tested for functional validation."
+          *
+          * Unfortunately, however, the other mechanism we have for doing this
+          * is 3DSTATE_PS_EXTRA::PixelShaderHasUAV which causes hangs on BDW.
+          * Given two bad options, we choose the one which works.
+          */
+         if ((wm_prog_data->has_side_effects || wm_prog_data->uses_kill) &&
+             !has_color_buffer_write_enabled(pipeline, blend))
+            wm.ForceThreadDispatchEnable = ForceON;
+#endif
 
          wm.BarycentricInterpolationMode =
             wm_prog_data->barycentric_interp_modes;
@@ -1438,7 +1512,8 @@ is_dual_src_blend_factor(VkBlendFactor factor)
 
 static void
 emit_3dstate_ps(struct anv_pipeline *pipeline,
-                const VkPipelineColorBlendStateCreateInfo *blend)
+                const VkPipelineColorBlendStateCreateInfo *blend,
+                const VkPipelineMultisampleStateCreateInfo *multisample)
 {
    MAYBE_UNUSED const struct gen_device_info *devinfo = &pipeline->device->info;
    const struct anv_shader_bin *fs_bin =
@@ -1481,13 +1556,30 @@ emit_3dstate_ps(struct anv_pipeline *pipeline,
 #endif
 
    anv_batch_emit(&pipeline->batch, GENX(3DSTATE_PS), ps) {
-      ps.KernelStartPointer0        = fs_bin->kernel.offset;
-      ps.KernelStartPointer1        = 0;
-      ps.KernelStartPointer2        = fs_bin->kernel.offset +
-                                      wm_prog_data->prog_offset_2;
       ps._8PixelDispatchEnable      = wm_prog_data->dispatch_8;
       ps._16PixelDispatchEnable     = wm_prog_data->dispatch_16;
-      ps._32PixelDispatchEnable     = false;
+      ps._32PixelDispatchEnable     = wm_prog_data->dispatch_32;
+
+      /* From the Sky Lake PRM 3DSTATE_PS::32 Pixel Dispatch Enable:
+       *
+       *    "When NUM_MULTISAMPLES = 16 or FORCE_SAMPLE_COUNT = 16, SIMD32
+       *    Dispatch must not be enabled for PER_PIXEL dispatch mode."
+       *
+       * Since 16x MSAA is first introduced on SKL, we don't need to apply
+       * the workaround on any older hardware.
+       */
+      if (GEN_GEN >= 9 && !wm_prog_data->persample_dispatch &&
+          multisample && multisample->rasterizationSamples == 16) {
+         assert(ps._8PixelDispatchEnable || ps._16PixelDispatchEnable);
+         ps._32PixelDispatchEnable = false;
+      }
+
+      ps.KernelStartPointer0 = fs_bin->kernel.offset +
+                               brw_wm_prog_data_prog_offset(wm_prog_data, ps, 0);
+      ps.KernelStartPointer1 = fs_bin->kernel.offset +
+                               brw_wm_prog_data_prog_offset(wm_prog_data, ps, 1);
+      ps.KernelStartPointer2 = fs_bin->kernel.offset +
+                               brw_wm_prog_data_prog_offset(wm_prog_data, ps, 2);
 
       ps.SingleProgramFlow          = false;
       ps.VectorMaskEnable           = true;
@@ -1519,10 +1611,11 @@ emit_3dstate_ps(struct anv_pipeline *pipeline,
 #endif
 
       ps.DispatchGRFStartRegisterForConstantSetupData0 =
-         wm_prog_data->base.dispatch_grf_start_reg;
-      ps.DispatchGRFStartRegisterForConstantSetupData1 = 0;
+         brw_wm_prog_data_dispatch_grf_start_reg(wm_prog_data, ps, 0);
+      ps.DispatchGRFStartRegisterForConstantSetupData1 =
+         brw_wm_prog_data_dispatch_grf_start_reg(wm_prog_data, ps, 1);
       ps.DispatchGRFStartRegisterForConstantSetupData2 =
-         wm_prog_data->dispatch_grf_start_reg_2;
+         brw_wm_prog_data_dispatch_grf_start_reg(wm_prog_data, ps, 2);
 
       ps.PerThreadScratchSpace   = get_scratch_space(fs_bin);
       ps.ScratchSpaceBasePointer =
@@ -1561,41 +1654,17 @@ emit_3dstate_ps_extra(struct anv_pipeline *pipeline,
       ps.PixelShaderKillsPixel         = subpass->has_ds_self_dep ||
                                          wm_prog_data->uses_kill;
 
-      /* The stricter cross-primitive coherency guarantees that the hardware
-       * gives us with the "Accesses UAV" bit set for at least one shader stage
-       * and the "UAV coherency required" bit set on the 3DPRIMITIVE command are
-       * redundant within the current image, atomic counter and SSBO GL APIs,
-       * which all have very loose ordering and coherency requirements and
-       * generally rely on the application to insert explicit barriers when a
-       * shader invocation is expected to see the memory writes performed by the
-       * invocations of some previous primitive.  Regardless of the value of
-       * "UAV coherency required", the "Accesses UAV" bits will implicitly cause
-       * an in most cases useless DC flush when the lowermost stage with the bit
-       * set finishes execution.
-       *
-       * It would be nice to disable it, but in some cases we can't because on
-       * Gen8+ it also has an influence on rasterization via the PS UAV-only
-       * signal (which could be set independently from the coherency mechanism
-       * in the 3DSTATE_WM command on Gen7), and because in some cases it will
-       * determine whether the hardware skips execution of the fragment shader
-       * or not via the ThreadDispatchEnable signal.  However if we know that
-       * GEN8_PS_BLEND_HAS_WRITEABLE_RT is going to be set and
-       * GEN8_PSX_PIXEL_SHADER_NO_RT_WRITE is not set it shouldn't make any
-       * difference so we may just disable it here.
-       *
-       * Gen8 hardware tries to compute ThreadDispatchEnable for us but doesn't
-       * take into account KillPixels when no depth or stencil writes are
-       * enabled. In order for occlusion queries to work correctly with no
-       * attachments, we need to force-enable here.
-       */
-      if ((wm_prog_data->has_side_effects || wm_prog_data->uses_kill) &&
-          !has_color_buffer_write_enabled(pipeline, blend))
-         ps.PixelShaderHasUAV = true;
-
 #if GEN_GEN >= 9
+      ps.PixelShaderComputesStencil = wm_prog_data->computed_stencil;
       ps.PixelShaderPullsBary    = wm_prog_data->pulls_bary;
-      ps.InputCoverageMaskState  = wm_prog_data->uses_sample_mask ?
-                                   ICMS_INNER_CONSERVATIVE : ICMS_NONE;
+
+      ps.InputCoverageMaskState  = ICMS_NONE;
+      if (wm_prog_data->uses_sample_mask) {
+         if (wm_prog_data->post_depth_coverage)
+            ps.InputCoverageMaskState  = ICMS_DEPTH_COVERAGE;
+         else
+            ps.InputCoverageMaskState  = ICMS_INNER_CONSERVATIVE;
+      }
 #else
       ps.PixelShaderUsesInputCoverageMask = wm_prog_data->uses_sample_mask;
 #endif
@@ -1667,6 +1736,10 @@ genX(graphics_pipeline_create)(
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO);
 
+   /* Use the default pipeline cache if none is specified */
+   if (cache == NULL && device->instance->pipeline_cache_enabled)
+      cache = &device->default_pipeline_cache;
+
    pipeline = vk_alloc2(&device->alloc, pAllocator, sizeof(*pipeline), 8,
                          VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (pipeline == NULL)
@@ -1721,7 +1794,8 @@ genX(graphics_pipeline_create)(
    emit_3dstate_sbe(pipeline);
    emit_3dstate_wm(pipeline, subpass, pCreateInfo->pColorBlendState,
                    pCreateInfo->pMultisampleState);
-   emit_3dstate_ps(pipeline, pCreateInfo->pColorBlendState);
+   emit_3dstate_ps(pipeline, pCreateInfo->pColorBlendState,
+                   pCreateInfo->pMultisampleState);
 #if GEN_GEN >= 8
    emit_3dstate_ps_extra(pipeline, subpass, pCreateInfo->pColorBlendState);
    emit_3dstate_vf_topology(pipeline);
@@ -1750,13 +1824,16 @@ compute_pipeline_create(
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);
 
+   /* Use the default pipeline cache if none is specified */
+   if (cache == NULL && device->instance->pipeline_cache_enabled)
+      cache = &device->default_pipeline_cache;
+
    pipeline = vk_alloc2(&device->alloc, pAllocator, sizeof(*pipeline), 8,
                          VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (pipeline == NULL)
       return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
 
    pipeline->device = device;
-   pipeline->layout = anv_pipeline_layout_from_handle(pCreateInfo->layout);
 
    pipeline->blend_state.map = NULL;
 
@@ -1781,6 +1858,7 @@ compute_pipeline_create(
    pipeline->needs_data_cache = false;
 
    assert(pCreateInfo->stage.stage == VK_SHADER_STAGE_COMPUTE_BIT);
+   pipeline->active_stages |= VK_SHADER_STAGE_COMPUTE_BIT;
    ANV_FROM_HANDLE(anv_shader_module, module,  pCreateInfo->stage.module);
    result = anv_pipeline_compile_cs(pipeline, cache, pCreateInfo, module,
                                     pCreateInfo->stage.pName,
@@ -1821,7 +1899,9 @@ compute_pipeline_create(
       vfe.MaximumNumberofThreads =
          devinfo->max_cs_threads * subslices - 1;
       vfe.NumberofURBEntries     = GEN_GEN <= 7 ? 0 : 2;
+#if GEN_GEN < 11
       vfe.ResetGatewayTimer      = true;
+#endif
 #if GEN_GEN <= 8
       vfe.BypassGatewayControl   = true;
 #endif

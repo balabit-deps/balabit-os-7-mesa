@@ -75,7 +75,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
-#include "main/core.h" /* for struct gl_shader */
+#include "main/mtypes.h"
 #include "main/shaderobj.h"
 #include "ir_builder.h"
 #include "glsl_parser_extras.h"
@@ -104,7 +104,7 @@ static bool
 compatibility_vs_only(const _mesa_glsl_parse_state *state)
 {
    return state->stage == MESA_SHADER_VERTEX &&
-          state->language_version <= 130 &&
+          (state->compat_shader || state->ARB_compatibility_enable) &&
           !state->es_shader;
 }
 
@@ -186,6 +186,14 @@ static bool
 texture_external(const _mesa_glsl_parse_state *state)
 {
    return state->OES_EGL_image_external_enable;
+}
+
+static bool
+texture_external_es3(const _mesa_glsl_parse_state *state)
+{
+   return state->OES_EGL_image_external_essl3_enable &&
+      state->es_shader &&
+      state->is_version(0, 300);
 }
 
 /** True if texturing functions with explicit LOD are allowed. */
@@ -438,7 +446,8 @@ fs_oes_derivatives(const _mesa_glsl_parse_state *state)
 {
    return state->stage == MESA_SHADER_FRAGMENT &&
           (state->is_version(110, 300) ||
-           state->OES_standard_derivatives_enable);
+           state->OES_standard_derivatives_enable ||
+           state->ctx->Const.AllowGLSLRelaxedES);
 }
 
 static bool
@@ -502,6 +511,12 @@ static bool
 shader_ballot(const _mesa_glsl_parse_state *state)
 {
    return state->ARB_shader_ballot_enable;
+}
+
+static bool
+supports_arb_fragment_shader_interlock(const _mesa_glsl_parse_state *state)
+{
+   return state->ARB_fragment_shader_interlock_enable;
 }
 
 static bool
@@ -974,6 +989,14 @@ private:
    ir_function_signature *_read_invocation_intrinsic(const glsl_type *type);
    ir_function_signature *_read_invocation(const glsl_type *type);
 
+
+   ir_function_signature *_invocation_interlock_intrinsic(
+      builtin_available_predicate avail,
+      enum ir_intrinsic_id id);
+   ir_function_signature *_invocation_interlock(
+      const char *intrinsic_name,
+      builtin_available_predicate avail);
+
    ir_function_signature *_shader_clock_intrinsic(builtin_available_predicate avail,
                                                   const glsl_type *type);
    ir_function_signature *_shader_clock(builtin_available_predicate avail,
@@ -1210,6 +1233,16 @@ builtin_builder::create_intrinsics()
                 _memory_barrier_intrinsic(compute_shader,
                                           ir_intrinsic_memory_barrier_shared),
                 NULL);
+
+   add_function("__intrinsic_begin_invocation_interlock",
+                _invocation_interlock_intrinsic(
+                   supports_arb_fragment_shader_interlock,
+                   ir_intrinsic_begin_invocation_interlock), NULL);
+
+   add_function("__intrinsic_end_invocation_interlock",
+                _invocation_interlock_intrinsic(
+                   supports_arb_fragment_shader_interlock,
+                   ir_intrinsic_end_invocation_interlock), NULL);
 
    add_function("__intrinsic_shader_clock",
                 _shader_clock_intrinsic(shader_clock,
@@ -1919,6 +1952,8 @@ builtin_builder::create_builtins()
 
                 _texture(ir_tex, v130, glsl_type::float_type, glsl_type::sampler2DRectShadow_type, glsl_type::vec3_type),
 
+                _texture(ir_tex, texture_external_es3, glsl_type::vec4_type,  glsl_type::samplerExternalOES_type, glsl_type::vec2_type),
+
                 _texture(ir_txb, v130_fs_only, glsl_type::vec4_type,  glsl_type::sampler1D_type,  glsl_type::float_type),
                 _texture(ir_txb, v130_fs_only, glsl_type::ivec4_type, glsl_type::isampler1D_type, glsl_type::float_type),
                 _texture(ir_txb, v130_fs_only, glsl_type::uvec4_type, glsl_type::usampler1D_type, glsl_type::float_type),
@@ -2078,6 +2113,9 @@ builtin_builder::create_builtins()
 
                 _texture(ir_tex, v130, glsl_type::vec4_type,  glsl_type::sampler2DRect_type,  glsl_type::vec3_type, TEX_PROJECT),
                 _texture(ir_tex, v130, glsl_type::ivec4_type, glsl_type::isampler2DRect_type, glsl_type::vec3_type, TEX_PROJECT),
+                _texture(ir_tex, texture_external_es3, glsl_type::vec4_type,  glsl_type::samplerExternalOES_type, glsl_type::vec3_type, TEX_PROJECT),
+                _texture(ir_tex, texture_external_es3, glsl_type::vec4_type,  glsl_type::samplerExternalOES_type, glsl_type::vec4_type, TEX_PROJECT),
+
                 _texture(ir_tex, v130, glsl_type::uvec4_type, glsl_type::usampler2DRect_type, glsl_type::vec3_type, TEX_PROJECT),
                 _texture(ir_tex, v130, glsl_type::vec4_type,  glsl_type::sampler2DRect_type,  glsl_type::vec4_type, TEX_PROJECT),
                 _texture(ir_tex, v130, glsl_type::ivec4_type, glsl_type::isampler2DRect_type, glsl_type::vec4_type, TEX_PROJECT),
@@ -2143,7 +2181,11 @@ builtin_builder::create_builtins()
                 _texelFetch(texture_multisample_array, glsl_type::vec4_type,  glsl_type::sampler2DMSArray_type,  glsl_type::ivec3_type),
                 _texelFetch(texture_multisample_array, glsl_type::ivec4_type, glsl_type::isampler2DMSArray_type, glsl_type::ivec3_type),
                 _texelFetch(texture_multisample_array, glsl_type::uvec4_type, glsl_type::usampler2DMSArray_type, glsl_type::ivec3_type),
+
+                _texelFetch(texture_external_es3, glsl_type::vec4_type,  glsl_type::samplerExternalOES_type, glsl_type::ivec2_type),
+
                 NULL);
+
 
    add_function("texelFetchOffset",
                 _texelFetch(v130, glsl_type::vec4_type,  glsl_type::sampler1D_type,  glsl_type::int_type, glsl_type::int_type),
@@ -3275,6 +3317,18 @@ builtin_builder::create_builtins()
    add_function("clockARB",
                 _shader_clock(shader_clock_int64,
                               glsl_type::uint64_t_type),
+                NULL);
+
+   add_function("beginInvocationInterlockARB",
+                _invocation_interlock(
+                   "__intrinsic_begin_invocation_interlock",
+                   supports_arb_fragment_shader_interlock),
+                NULL);
+
+   add_function("endInvocationInterlockARB",
+                _invocation_interlock(
+                   "__intrinsic_end_invocation_interlock",
+                   supports_arb_fragment_shader_interlock),
                 NULL);
 
    add_function("anyInvocationARB",
@@ -6207,6 +6261,24 @@ builtin_builder::_read_invocation(const glsl_type *type)
    body.emit(call(shader->symbols->get_function("__intrinsic_read_invocation"),
                   retval, sig->parameters));
    body.emit(ret(retval));
+   return sig;
+}
+
+ir_function_signature *
+builtin_builder::_invocation_interlock_intrinsic(builtin_available_predicate avail,
+                                                 enum ir_intrinsic_id id)
+{
+   MAKE_INTRINSIC(glsl_type::void_type, id, avail, 0);
+   return sig;
+}
+
+ir_function_signature *
+builtin_builder::_invocation_interlock(const char *intrinsic_name,
+                                       builtin_available_predicate avail)
+{
+   MAKE_SIG(glsl_type::void_type, avail, 0);
+   body.emit(call(shader->symbols->get_function(intrinsic_name),
+                  NULL, sig->parameters));
    return sig;
 }
 
