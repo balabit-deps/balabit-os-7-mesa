@@ -105,7 +105,7 @@ void r600_gfx_write_event_eop(struct r600_common_context *ctx,
 			      struct r600_resource *buf, uint64_t va,
 			      uint32_t new_fence, unsigned query_type)
 {
-	struct radeon_winsys_cs *cs = ctx->gfx.cs;
+	struct radeon_cmdbuf *cs = ctx->gfx.cs;
 	unsigned op = EVENT_TYPE(event) |
 		      EVENT_INDEX(5) |
 		      event_flags;
@@ -127,16 +127,17 @@ unsigned r600_gfx_write_fence_dwords(struct r600_common_screen *screen)
 {
 	unsigned dwords = 6;
 
-	if (!screen->info.has_virtual_memory)
+	if (!screen->info.r600_has_virtual_memory)
 		dwords += 2;
 
 	return dwords;
 }
 
 void r600_gfx_wait_fence(struct r600_common_context *ctx,
+			 struct r600_resource *buf,
 			 uint64_t va, uint32_t ref, uint32_t mask)
 {
-	struct radeon_winsys_cs *cs = ctx->gfx.cs;
+	struct radeon_cmdbuf *cs = ctx->gfx.cs;
 
 	radeon_emit(cs, PKT3(PKT3_WAIT_REG_MEM, 5, 0));
 	radeon_emit(cs, WAIT_REG_MEM_EQUAL | WAIT_REG_MEM_MEM_SPACE(1));
@@ -145,6 +146,10 @@ void r600_gfx_wait_fence(struct r600_common_context *ctx,
 	radeon_emit(cs, ref); /* reference value */
 	radeon_emit(cs, mask); /* mask */
 	radeon_emit(cs, 4); /* poll interval */
+
+	if (buf)
+		r600_emit_reloc(ctx, &ctx->gfx, buf, RADEON_USAGE_READ,
+				RADEON_PRIO_QUERY);
 }
 
 void r600_draw_rectangle(struct blitter_context *blitter,
@@ -237,7 +242,7 @@ void r600_draw_rectangle(struct blitter_context *blitter,
 
 static void r600_dma_emit_wait_idle(struct r600_common_context *rctx)
 {
-	struct radeon_winsys_cs *cs = rctx->dma.cs;
+	struct radeon_cmdbuf *cs = rctx->dma.cs;
 
 	if (rctx->chip_class >= EVERGREEN)
 		radeon_emit(cs, 0xf0000000); /* NOP */
@@ -306,15 +311,13 @@ void r600_need_dma_space(struct r600_common_context *ctx, unsigned num_dw,
 	/* If GPUVM is not supported, the CS checker needs 2 entries
 	 * in the buffer list per packet, which has to be done manually.
 	 */
-	if (ctx->screen->info.has_virtual_memory) {
+	if (ctx->screen->info.r600_has_virtual_memory) {
 		if (dst)
 			radeon_add_to_buffer_list(ctx, &ctx->dma, dst,
-						  RADEON_USAGE_WRITE,
-						  RADEON_PRIO_SDMA_BUFFER);
+						  RADEON_USAGE_WRITE, 0);
 		if (src)
 			radeon_add_to_buffer_list(ctx, &ctx->dma, src,
-						  RADEON_USAGE_READ,
-						  RADEON_PRIO_SDMA_BUFFER);
+						  RADEON_USAGE_READ, 0);
 	}
 
 	/* this function is called before all DMA calls, so increment this. */
@@ -463,7 +466,7 @@ static void r600_flush_dma_ring(void *ctx, unsigned flags,
 				struct pipe_fence_handle **fence)
 {
 	struct r600_common_context *rctx = (struct r600_common_context *)ctx;
-	struct radeon_winsys_cs *cs = rctx->dma.cs;
+	struct radeon_cmdbuf *cs = rctx->dma.cs;
 	struct radeon_saved_cs saved;
 	bool check_vm =
 		(rctx->screen->debug_flags & DBG_CHECK_VM) &&
@@ -497,7 +500,7 @@ static void r600_flush_dma_ring(void *ctx, unsigned flags,
  * Store a linearized copy of all chunks of \p cs together with the buffer
  * list in \p saved.
  */
-void radeon_save_cs(struct radeon_winsys *ws, struct radeon_winsys_cs *cs,
+void radeon_save_cs(struct radeon_winsys *ws, struct radeon_cmdbuf *cs,
 		    struct radeon_saved_cs *saved, bool get_buffer_list)
 {
 	uint32_t *buf;
@@ -905,11 +908,10 @@ static float r600_get_paramf(struct pipe_screen* pscreen,
 		return 16.0f;
 	case PIPE_CAPF_MAX_TEXTURE_LOD_BIAS:
 		return 16.0f;
-	case PIPE_CAPF_GUARD_BAND_LEFT:
-	case PIPE_CAPF_GUARD_BAND_TOP:
-	case PIPE_CAPF_GUARD_BAND_RIGHT:
-	case PIPE_CAPF_GUARD_BAND_BOTTOM:
-		return 0.0f;
+    case PIPE_CAPF_MIN_CONSERVATIVE_RASTER_DILATE:
+    case PIPE_CAPF_MAX_CONSERVATIVE_RASTER_DILATE:
+    case PIPE_CAPF_CONSERVATIVE_RASTER_DILATE_GRANULARITY:
+        return 0.0f;
 	}
 	return 0.0f;
 }
@@ -996,7 +998,7 @@ static unsigned get_max_threads_per_block(struct r600_common_screen *screen,
 	if (ir_type != PIPE_SHADER_IR_TGSI)
 		return 256;
 	if (screen->chip_class >= EVERGREEN)
-		return 2048;
+		return 1024;
 	return 256;
 }
 
@@ -1356,7 +1358,7 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 		       (int)DIV_ROUND_UP(rscreen->info.max_alloc_size, 1024*1024));
 		printf("min_alloc_size = %u\n", rscreen->info.min_alloc_size);
 		printf("has_dedicated_vram = %u\n", rscreen->info.has_dedicated_vram);
-		printf("has_virtual_memory = %i\n", rscreen->info.has_virtual_memory);
+		printf("r600_has_virtual_memory = %i\n", rscreen->info.r600_has_virtual_memory);
 		printf("gfx_ib_pad_with_type2 = %i\n", rscreen->info.gfx_ib_pad_with_type2);
 		printf("has_hw_decode = %u\n", rscreen->info.has_hw_decode);
 		printf("num_sdma_rings = %i\n", rscreen->info.num_sdma_rings);

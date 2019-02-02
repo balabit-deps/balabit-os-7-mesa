@@ -378,7 +378,7 @@ fd4_emit_vertex_bufs(struct fd_ringbuffer *ring, struct fd4_emit *emit)
 			continue;
 		if (vp->inputs[i].sysval) {
 			switch(vp->inputs[i].slot) {
-			case SYSTEM_VALUE_BASE_VERTEX:
+			case SYSTEM_VALUE_FIRST_VERTEX:
 				/* handled elsewhere */
 				break;
 			case SYSTEM_VALUE_VERTEX_ID_ZERO_BASE:
@@ -417,6 +417,13 @@ fd4_emit_vertex_bufs(struct fd_ringbuffer *ring, struct fd4_emit *emit)
 			uint32_t off = vb->buffer_offset + elem->src_offset;
 			uint32_t size = fd_bo_size(rsc->bo) - off;
 			debug_assert(fmt != ~0);
+
+#ifdef DEBUG
+			/* see dEQP-GLES31.stress.vertex_attribute_binding.buffer_bounds.bind_vertex_buffer_offset_near_wrap_10
+			 */
+			if (off > fd_bo_size(rsc->bo))
+				continue;
+#endif
 
 			OUT_PKT0(ring, REG_A4XX_VFD_FETCH(j), 4);
 			OUT_RING(ring, A4XX_VFD_FETCH_INSTR_0_FETCHSIZE(fs - 1) |

@@ -217,7 +217,7 @@ static int r600_init_surface(struct r600_common_screen *rscreen,
 		bpe = 4; /* stencil is allocated separately on evergreen */
 	} else {
 		bpe = util_format_get_blocksize(ptex->format);
-		assert(util_is_power_of_two(bpe));
+		assert(util_is_power_of_two_or_zero(bpe));
 	}
 
 	if (!is_flushed_depth && is_depth) {
@@ -245,8 +245,8 @@ static int r600_init_surface(struct r600_common_screen *rscreen,
 	if (!(ptex->flags & R600_RESOURCE_FLAG_FORCE_TILING))
 		flags |= RADEON_SURF_OPTIMIZE_FOR_SPACE;
 
-	r = rscreen->ws->surface_init(rscreen->ws, ptex, flags, bpe,
-				      array_mode, surface);
+	r = rscreen->ws->surface_init(rscreen->ws, ptex,
+				      flags, bpe, array_mode, surface);
 	if (r) {
 		return r;
 	}
@@ -616,8 +616,8 @@ void r600_texture_get_fmask_info(struct r600_common_screen *rscreen,
 		bpe *= 2;
 	}
 
-	if (rscreen->ws->surface_init(rscreen->ws, &templ, flags, bpe,
-				      RADEON_SURF_MODE_2D, &fmask)) {
+	if (rscreen->ws->surface_init(rscreen->ws, &templ,
+				      flags, bpe, RADEON_SURF_MODE_2D, &fmask)) {
 		R600_ERR("Got error in surface_init while allocating FMASK.\n");
 		return;
 	}
@@ -774,8 +774,8 @@ static void r600_texture_get_htile_size(struct r600_common_screen *rscreen,
 		return;
 	}
 
-	width = align(rtex->resource.b.b.width0, cl_width * 8);
-	height = align(rtex->resource.b.b.height0, cl_height * 8);
+	width = align(rtex->surface.u.legacy.level[0].nblk_x, cl_width * 8);
+	height = align(rtex->surface.u.legacy.level[0].nblk_y, cl_height * 8);
 
 	slice_elements = (width * height) / (8 * 8);
 	slice_bytes = slice_elements * 4;
@@ -953,10 +953,6 @@ r600_texture_create_object(struct pipe_screen *screen,
 		r600_init_resource_fields(rscreen, resource, rtex->size,
 					  rtex->surface.surf_alignment);
 
-		/* Displayable surfaces are not suballocated. */
-		if (resource->b.b.bind & PIPE_BIND_SCANOUT)
-			resource->flags |= RADEON_FLAG_NO_SUBALLOC;
-
 		if (!r600_alloc_resource(rscreen, resource)) {
 			FREE(rtex);
 			return NULL;
@@ -1056,7 +1052,7 @@ r600_choose_tiling(struct r600_common_screen *rscreen,
 		/* 1D textures should be linear - fixes image operations on 1d */
 		if (templ->target == PIPE_TEXTURE_1D ||
 		    templ->target == PIPE_TEXTURE_1D_ARRAY)
-                       return RADEON_SURF_MODE_LINEAR_ALIGNED;
+			return RADEON_SURF_MODE_LINEAR_ALIGNED;
 
 		/* Textures likely to be mapped often. */
 		if (templ->usage == PIPE_USAGE_STAGING ||
@@ -1640,7 +1636,7 @@ static void r600_clear_texture(struct pipe_context *pipe,
 			desc->unpack_rgba_float(color.f, 0, data, 0, 1, 1);
 
 		if (screen->is_format_supported(screen, tex->format,
-						tex->target, 0,
+						tex->target, 0, 0,
 						PIPE_BIND_RENDER_TARGET)) {
 			pipe->clear_render_target(pipe, sf, &color,
 						  box->x, box->y,
@@ -1796,6 +1792,16 @@ void evergreen_do_fast_color_clear(struct r600_common_context *rctx,
 		 */
 		if (tex->resource.b.is_shared &&
 		    !(tex->resource.external_usage & PIPE_HANDLE_USAGE_EXPLICIT_FLUSH))
+			continue;
+
+		/* Use a slow clear for small surfaces where the cost of
+		 * the eliminate pass can be higher than the benefit of fast
+		 * clear. AMDGPU-pro does this, but the numbers may differ.
+		 *
+		 * This helps on both dGPUs and APUs, even small ones.
+		 */
+		if (tex->resource.b.b.nr_samples <= 1 &&
+		    tex->resource.b.b.width0 * tex->resource.b.b.height0 <= 300 * 300)
 			continue;
 
 		{

@@ -763,22 +763,22 @@ vec4_instruction_scheduler::vec4_instruction_scheduler(vec4_visitor *v,
 }
 
 void
-vec4_instruction_scheduler::count_reads_remaining(backend_instruction *be)
+vec4_instruction_scheduler::count_reads_remaining(backend_instruction *)
 {
 }
 
 void
-vec4_instruction_scheduler::setup_liveness(cfg_t *cfg)
+vec4_instruction_scheduler::setup_liveness(cfg_t *)
 {
 }
 
 void
-vec4_instruction_scheduler::update_register_pressure(backend_instruction *be)
+vec4_instruction_scheduler::update_register_pressure(backend_instruction *)
 {
 }
 
 int
-vec4_instruction_scheduler::get_register_pressure_benefit(backend_instruction *be)
+vec4_instruction_scheduler::get_register_pressure_benefit(backend_instruction *)
 {
    return 0;
 }
@@ -974,7 +974,7 @@ fs_instruction_scheduler::calculate_deps()
     */
    schedule_node *last_grf_write[grf_count * 16];
    schedule_node *last_mrf_write[BRW_MAX_MRF(v->devinfo->gen)];
-   schedule_node *last_conditional_mod[4] = {};
+   schedule_node *last_conditional_mod[8] = {};
    schedule_node *last_accumulator_write = NULL;
    /* Fixed HW registers are assumed to be separate from the virtual
     * GRFs, so they can be tracked separately.  We don't really write
@@ -1554,7 +1554,7 @@ fs_instruction_scheduler::issue_time(backend_instruction *inst)
 }
 
 int
-vec4_instruction_scheduler::issue_time(backend_instruction *inst)
+vec4_instruction_scheduler::issue_time(backend_instruction *)
 {
    /* We always execute as two vec4s in parallel. */
    return 2;

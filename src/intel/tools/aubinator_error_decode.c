@@ -51,6 +51,7 @@
 /* options */
 
 static bool option_full_decode = true;
+static bool option_print_all_bb = false;
 static bool option_print_offsets = true;
 static enum { COLOR_AUTO, COLOR_ALWAYS, COLOR_NEVER } option_color;
 static char *xml_path = NULL;
@@ -65,7 +66,8 @@ print_head(unsigned int reg)
 static void
 print_register(struct gen_spec *spec, const char *name, uint32_t reg)
 {
-   struct gen_group *reg_spec = gen_spec_find_register_by_name(spec, name);
+   struct gen_group *reg_spec =
+      name ? gen_spec_find_register_by_name(spec, name) : NULL;
 
    if (reg_spec) {
       gen_print_group(stdout, reg_spec, 0, &reg, 0,
@@ -119,7 +121,7 @@ static int ring_name_to_class(const char *ring_name,
       [VECS] = "vecs",
    };
    for (size_t i = 0; i < ARRAY_SIZE(class_names); i++) {
-      if (strcmp(ring_name, class_names[i]))
+      if (strncmp(ring_name, class_names[i], strlen(class_names[i])))
          continue;
 
       *class = i;
@@ -293,7 +295,8 @@ struct section {
    int count;
 };
 
-#define MAX_SECTIONS 30
+#define MAX_SECTIONS 256
+static unsigned num_sections;
 static struct section sections[MAX_SECTIONS];
 
 static int zlib_inflate(uint32_t **ptr, int len)
@@ -384,13 +387,13 @@ static int ascii85_decode(const char *in, uint32_t **out, bool inflate)
 static struct gen_batch_decode_bo
 get_gen_batch_bo(void *user_data, uint64_t address)
 {
-   for (int s = 0; s < MAX_SECTIONS; s++) {
+   for (int s = 0; s < num_sections; s++) {
       if (sections[s].gtt_offset <= address &&
-          address < sections[s].gtt_offset + sections[s].count) {
+          address < sections[s].gtt_offset + sections[s].count * 4) {
          return (struct gen_batch_decode_bo) {
             .addr = sections[s].gtt_offset,
             .map = sections[s].data,
-            .size = sections[s].count,
+            .size = sections[s].count * 4,
          };
       }
    }
@@ -409,7 +412,6 @@ read_data_file(FILE *file)
    uint32_t offset, value;
    char *ring_name = NULL;
    struct gen_device_info devinfo;
-   int sect_num = 0;
 
    while (getline(&line, &line_size, file) > 0) {
       char *new_ring_name = NULL;
@@ -427,9 +429,10 @@ read_data_file(FILE *file)
             fprintf(stderr, "ASCII85 decode failed.\n");
             exit(EXIT_FAILURE);
          }
-         sections[sect_num].data = data;
-         sections[sect_num].count = count;
-         sect_num++;
+         assert(num_sections < MAX_SECTIONS);
+         sections[num_sections].data = data;
+         sections[num_sections].count = count;
+         num_sections++;
          continue;
       }
 
@@ -445,6 +448,7 @@ read_data_file(FILE *file)
             { "hw status", "HW status" },
             { "wa context", "WA context" },
             { "wa batchbuffer", "WA batch" },
+            { "NULL context", "Kernel context" },
             { "user", "user" },
             { "semaphores", "semaphores", },
             { "guc log buffer", "GuC log", },
@@ -462,13 +466,14 @@ read_data_file(FILE *file)
                break;
          }
 
-         sections[sect_num].buffer_name = b->name;
-         sections[sect_num].ring_name = strdup(ring_name);
+         assert(num_sections < MAX_SECTIONS);
+         sections[num_sections].buffer_name = b->name;
+         sections[num_sections].ring_name = strdup(ring_name);
 
          uint32_t hi, lo;
          dashes = strchr(dashes, '=');
          if (dashes && sscanf(dashes, "= 0x%08x %08x\n", &hi, &lo))
-            sections[sect_num].gtt_offset = ((uint64_t) hi) << 32 | lo;
+            sections[num_sections].gtt_offset = ((uint64_t) hi) << 32 | lo;
 
          continue;
       }
@@ -539,6 +544,18 @@ read_data_file(FILE *file)
                print_register(spec, reg_name, reg);
          }
 
+         matched = sscanf(line, "  SC_INSTDONE: 0x%08x\n", &reg);
+         if (matched == 1)
+            print_register(spec, "SC_INSTDONE", reg);
+
+         matched = sscanf(line, "  SAMPLER_INSTDONE[%*d][%*d]: 0x%08x\n", &reg);
+         if (matched == 1)
+            print_register(spec, "SAMPLER_INSTDONE", reg);
+
+         matched = sscanf(line, "  ROW_INSTDONE[%*d][%*d]: 0x%08x\n", &reg);
+         if (matched == 1)
+            print_register(spec, "ROW_INSTDONE", reg);
+
          matched = sscanf(line, "  INSTDONE1: 0x%08x\n", &reg);
          if (matched == 1)
             print_register(spec, "INSTDONE_1", reg);
@@ -580,16 +597,17 @@ read_data_file(FILE *file)
 
    struct gen_batch_decode_ctx batch_ctx;
    gen_batch_decode_ctx_init(&batch_ctx, &devinfo, stdout, batch_flags,
-                             xml_path, get_gen_batch_bo, NULL);
+                             xml_path, get_gen_batch_bo, NULL, NULL);
 
 
-   for (int s = 0; s < sect_num; s++) {
+   for (int s = 0; s < num_sections; s++) {
       printf("--- %s (%s) at 0x%08x %08x\n",
              sections[s].buffer_name, sections[s].ring_name,
              (unsigned) (sections[s].gtt_offset >> 32),
              (unsigned) sections[s].gtt_offset);
 
-      if (strcmp(sections[s].buffer_name, "batch buffer") == 0 ||
+      if (option_print_all_bb ||
+          strcmp(sections[s].buffer_name, "batch buffer") == 0 ||
           strcmp(sections[s].buffer_name, "ring buffer") == 0 ||
           strcmp(sections[s].buffer_name, "HW Context") == 0) {
          gen_print_batch(&batch_ctx, sections[s].data, sections[s].count,
@@ -599,7 +617,7 @@ read_data_file(FILE *file)
 
    gen_batch_decode_ctx_finish(&batch_ctx);
 
-   for (int s = 0; s < sect_num; s++) {
+   for (int s = 0; s < num_sections; s++) {
       free(sections[s].ring_name);
       free(sections[s].data);
    }
@@ -647,7 +665,8 @@ print_help(const char *progname, FILE *file)
            "                        if omitted), 'always', or 'never'\n"
            "      --no-pager      don't launch pager\n"
            "      --no-offsets    don't print instruction offsets\n"
-           "      --xml=DIR       load hardware xml description from directory DIR\n",
+           "      --xml=DIR       load hardware xml description from directory DIR\n"
+           "      --all-bb        print out all batchbuffers\n",
            progname);
 }
 
@@ -666,6 +685,7 @@ main(int argc, char *argv[])
       { "headers",    no_argument,       (int *) &option_full_decode,   false },
       { "color",      required_argument, NULL,                          'c' },
       { "xml",        required_argument, NULL,                          'x' },
+      { "all-bb",     no_argument,       (int *) &option_print_all_bb,  true },
       { NULL,         0,                 NULL,                          0 }
    };
 

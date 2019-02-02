@@ -1520,6 +1520,10 @@ void Source::scanInstructionSrc(const Instruction& insn,
          info->out[src.getIndex(0)].oread = 1;
       }
    }
+   if (src.getFile() == TGSI_FILE_SYSTEM_VALUE) {
+      if (info->sv[src.getIndex(0)].sn == TGSI_SEMANTIC_SAMPLEPOS)
+         info->prop.fp.readsSampleLocations = true;
+   }
    if (src.getFile() != TGSI_FILE_INPUT)
       return;
 
@@ -1560,8 +1564,16 @@ bool Source::scanInstruction(const struct tgsi_full_instruction *inst)
    if (insn.getOpcode() == TGSI_OPCODE_FBFETCH)
       info->prop.fp.readsFramebuffer = true;
 
+   if (insn.getOpcode() == TGSI_OPCODE_INTERP_SAMPLE)
+      info->prop.fp.readsSampleLocations = true;
+
    if (insn.dstCount()) {
       Instruction::DstRegister dst = insn.getDst(0);
+
+      if (insn.getOpcode() == TGSI_OPCODE_STORE &&
+          dst.getFile() != TGSI_FILE_MEMORY) {
+         info->io.globalAccess |= 0x2;
+      }
 
       if (dst.getFile() == TGSI_FILE_OUTPUT) {
          if (dst.isIndirect(0))
@@ -1579,10 +1591,6 @@ bool Source::scanInstruction(const struct tgsi_full_instruction *inst)
 
          if (isEdgeFlagPassthrough(insn))
             info->io.edgeFlagIn = insn.getSrc(0).getIndex(0);
-      } else
-      if (dst.getFile() != TGSI_FILE_MEMORY &&
-          insn.getOpcode() == TGSI_OPCODE_STORE) {
-         info->io.globalAccess |= 0x2;
       } else
       if (dst.getFile() == TGSI_FILE_TEMPORARY) {
          if (dst.isIndirect(0))
@@ -3083,10 +3091,11 @@ Converter::handleINTERP(Value *dst[4])
          assert(sym[c]);
          op = insn->op;
          mode = insn->ipa;
+         ptr = insn->getIndirect(0, 0);
       }
    } else {
       if (src.isIndirect(0))
-         ptr = fetchSrc(src.getIndirect(0), 0, NULL);
+         ptr = shiftAddress(fetchSrc(src.getIndirect(0), 0, NULL));
 
       // We can assume that the fixed index will point to an input of the same
       // interpolation type in case of an indirect.
@@ -3144,10 +3153,10 @@ Converter::handleINTERP(Value *dst[4])
       insn = mkOp1(op, TYPE_F32, dst[c], sym[c] ? sym[c] : srcToSym(src, c));
       if (op == OP_PINTERP)
          insn->setSrc(1, w);
-      if (ptr)
-         insn->setIndirect(0, 0, ptr);
       if (offset)
          insn->setSrc(op == OP_PINTERP ? 2 : 1, offset);
+      if (ptr)
+         insn->setIndirect(0, 0, ptr);
 
       insn->setInterpolate(mode);
    }
@@ -3604,6 +3613,9 @@ Converter::handleInstruction(const struct tgsi_full_instruction *insn)
                                   info->out[info->io.viewportId].slot[0] * 4);
          mkStore(OP_EXPORT, TYPE_U32, vpSym, NULL, viewport);
       }
+      /* handle user clip planes for each emitted vertex */
+      if (info->io.genUserClip > 0)
+         handleUserClipPlanes();
       /* fallthrough */
    case TGSI_OPCODE_ENDPRIM:
    {
@@ -3778,7 +3790,9 @@ Converter::handleInstruction(const struct tgsi_full_instruction *insn)
       setPosition(epilogue, true);
       if (prog->getType() == Program::TYPE_FRAGMENT)
          exportOutputs();
-      if (info->io.genUserClip > 0)
+      if ((prog->getType() == Program::TYPE_VERTEX ||
+           prog->getType() == Program::TYPE_TESSELLATION_EVAL
+          ) && info->io.genUserClip > 0)
          handleUserClipPlanes();
       mkOp(OP_EXIT, TYPE_NONE, NULL)->terminator = 1;
    }

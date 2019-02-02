@@ -1835,13 +1835,14 @@ tc_set_log_context(struct pipe_context *_pipe, struct u_log_context *log)
 
 static void
 tc_create_fence_fd(struct pipe_context *_pipe,
-                   struct pipe_fence_handle **fence, int fd)
+                   struct pipe_fence_handle **fence, int fd,
+                   enum pipe_fd_type type)
 {
    struct threaded_context *tc = threaded_context(_pipe);
    struct pipe_context *pipe = tc->pipe;
 
    tc_sync(tc);
-   pipe->create_fence_fd(pipe, fence, fd);
+   pipe->create_fence_fd(pipe, fence, fd, type);
 }
 
 static void
@@ -1858,6 +1859,25 @@ tc_fence_server_sync(struct pipe_context *_pipe,
    struct threaded_context *tc = threaded_context(_pipe);
    struct pipe_screen *screen = tc->pipe->screen;
    union tc_payload *payload = tc_add_small_call(tc, TC_CALL_fence_server_sync);
+
+   payload->fence = NULL;
+   screen->fence_reference(screen, &payload->fence, fence);
+}
+
+static void
+tc_call_fence_server_signal(struct pipe_context *pipe, union tc_payload *payload)
+{
+   pipe->fence_server_signal(pipe, payload->fence);
+   pipe->screen->fence_reference(pipe->screen, &payload->fence, NULL);
+}
+
+static void
+tc_fence_server_signal(struct pipe_context *_pipe,
+                           struct pipe_fence_handle *fence)
+{
+   struct threaded_context *tc = threaded_context(_pipe);
+   struct pipe_screen *screen = tc->pipe->screen;
+   union tc_payload *payload = tc_add_small_call(tc, TC_CALL_fence_server_signal);
 
    payload->fence = NULL;
    screen->fence_reference(screen, &payload->fence, fence);
@@ -2185,7 +2205,8 @@ tc_generate_mipmap(struct pipe_context *_pipe,
       bind = PIPE_BIND_RENDER_TARGET;
 
    if (!screen->is_format_supported(screen, format, res->target,
-                                    res->nr_samples, bind))
+                                    res->nr_samples, res->nr_storage_samples,
+                                    bind))
       return false;
 
    struct tc_generate_mipmap *p =
@@ -2546,7 +2567,7 @@ threaded_context_create(struct pipe_context *pipe,
     * from the queue before being executed, so keep one tc_batch slot for that
     * execution. Also, keep one unused slot for an unflushed batch.
     */
-   if (!util_queue_init(&tc->queue, "gallium_drv", TC_MAX_BATCHES - 2, 1, 0))
+   if (!util_queue_init(&tc->queue, "gdrv", TC_MAX_BATCHES - 2, 1, 0))
       goto fail;
 
    for (unsigned i = 0; i < TC_MAX_BATCHES; i++) {
@@ -2661,6 +2682,7 @@ threaded_context_create(struct pipe_context *pipe,
    CTX_INIT(set_debug_callback);
    CTX_INIT(create_fence_fd);
    CTX_INIT(fence_server_sync);
+   CTX_INIT(fence_server_signal);
    CTX_INIT(get_timestamp);
    CTX_INIT(create_texture_handle);
    CTX_INIT(delete_texture_handle);

@@ -239,7 +239,7 @@
 #define     S_411_ENGINE(x)		(((unsigned)(x) & 0x1) << 27)
 #define       V_411_ME			0
 #define       V_411_PFP			1
-#define     S_411_DSL_SEL(x)		(((unsigned)(x) & 0x3) << 20)
+#define     S_411_DST_SEL(x)		(((unsigned)(x) & 0x3) << 20)
 #define       V_411_DST_ADDR		0
 #define       V_411_GDS			1 /* program DAS to 1 as well */
 #define       V_411_NOWHERE		2 /* new for GFX9 */
@@ -294,7 +294,7 @@
 #define       V_500_GDS			1 /* program SAS to 1 as well */
 #define       V_500_DATA		2
 #define       V_500_SRC_ADDR_TC_L2	3 /* new for CIK */
-#define     S_500_DSL_SEL(x)		(((unsigned)(x) & 0x3) << 20)
+#define     S_500_DST_SEL(x)		(((unsigned)(x) & 0x3) << 20)
 #define       V_500_DST_ADDR		0
 #define       V_500_GDS			1 /* program DAS to 1 as well */
 #define       V_500_NOWHERE		2 /* new for GFX9 */
@@ -9123,7 +9123,9 @@
 #define    CIK_SDMA_PACKET_SEMAPHORE               0x7
 #define    CIK_SDMA_PACKET_CONSTANT_FILL           0xb
 #define    CIK_SDMA_PACKET_SRBM_WRITE              0xe
-#define    CIK_SDMA_COPY_MAX_SIZE                  0x3fffe0
+/* There is apparently an undocumented HW "feature" that
+   prevents the HW from copying past 256 bytes of (1 << 22) */
+#define    CIK_SDMA_COPY_MAX_SIZE                  0x3fff00
 
 enum amd_cmp_class_flags {
 	S_NAN = 1 << 0,        // Signaling NaN

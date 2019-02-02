@@ -18,8 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# TODO: main/tests
-
 subdir('program')
 subdir('main')
 
@@ -65,8 +63,6 @@ files_libmesa_common = files(
   'main/api_exec.h',
   'main/api_loopback.c',
   'main/api_loopback.h',
-  'main/api_validate.c',
-  'main/api_validate.h',
   'main/arbprogram.c',
   'main/arbprogram.h',
   'main/arrayobj.c',
@@ -100,13 +96,14 @@ files_libmesa_common = files(
   'main/condrender.c',
   'main/condrender.h',
   'main/config.h',
+  'main/conservativeraster.c',
+  'main/conservativeraster.h',
   'main/context.c',
   'main/context.h',
   'main/convolve.c',
   'main/convolve.h',
   'main/copyimage.c',
   'main/copyimage.h',
-  'main/core.h',
   'main/cpuinfo.c',
   'main/cpuinfo.h',
   'main/dd.h',
@@ -122,6 +119,8 @@ files_libmesa_common = files(
   'main/drawpix.h',
   'main/drawtex.c',
   'main/drawtex.h',
+  'main/draw_validate.c',
+  'main/draw_validate.h',
   'main/enable.c',
   'main/enable.h',
   'main/enums.h',
@@ -190,6 +189,7 @@ files_libmesa_common = files(
   'main/mipmap.h',
   'main/mm.c',
   'main/mm.h',
+  'main/menums.h',
   'main/mtypes.h',
   'main/multisample.c',
   'main/multisample.h',
@@ -254,6 +254,8 @@ files_libmesa_common = files(
   'main/syncobj.c',
   'main/syncobj.h',
   'main/texcompress.c',
+  'main/texcompress_astc.cpp',
+  'main/texcompress_astc.h',
   'main/texcompress_bptc.c',
   'main/texcompress_bptc.h',
   'main/texcompress_cpal.c',
@@ -327,7 +329,6 @@ files_libmesa_common = files(
   'vbo/vbo_attrib.h',
   'vbo/vbo_attrib_tmp.h',
   'vbo/vbo_context.c',
-  'vbo/vbo_context.h',
   'vbo/vbo_exec_api.c',
   'vbo/vbo_exec_array.c',
   'vbo/vbo_exec.c',
@@ -339,16 +340,11 @@ files_libmesa_common = files(
   'vbo/vbo_noop.c',
   'vbo/vbo_noop.h',
   'vbo/vbo_primitive_restart.c',
-  'vbo/vbo_rebase.c',
   'vbo/vbo_save_api.c',
   'vbo/vbo_save.c',
   'vbo/vbo_save_draw.c',
   'vbo/vbo_save.h',
   'vbo/vbo_save_loopback.c',
-  'vbo/vbo_split.c',
-  'vbo/vbo_split_copy.c',
-  'vbo/vbo_split.h',
-  'vbo/vbo_split_inplace.c',
   'x86/common_x86.c',
 )
 
@@ -367,6 +363,11 @@ files_libmesa_classic = files(
   'tnl/tnl.h',
   'tnl/t_pipeline.c',
   'tnl/t_pipeline.h',
+  'tnl/t_rebase.c',
+  'tnl/t_split.c',
+  'tnl/t_split_copy.c',
+  'tnl/t_split.h',
+  'tnl/t_split_inplace.c',
   'tnl/t_vb_cliptmp.h',
   'tnl/t_vb_fog.c',
   'tnl/t_vb_light.c',
@@ -536,6 +537,8 @@ files_libmesa_gallium = files(
   'state_tracker/st_cb_readpixels.h',
   'state_tracker/st_cb_strings.c',
   'state_tracker/st_cb_strings.h',
+  'state_tracker/st_cb_semaphoreobjects.c',
+  'state_tracker/st_cb_semaphoreobjects.h',
   'state_tracker/st_cb_syncobj.c',
   'state_tracker/st_cb_syncobj.h',
   'state_tracker/st_cb_texturebarrier.c',
@@ -578,6 +581,7 @@ files_libmesa_gallium = files(
   'state_tracker/st_nir.h',
   'state_tracker/st_nir_lower_builtin.c',
   'state_tracker/st_nir_lower_tex_src_plane.c',
+  'state_tracker/st_nir_lower_uniforms_to_ubo.c',
   'state_tracker/st_pbo.c',
   'state_tracker/st_pbo.h',
   'state_tracker/st_program.c',
@@ -611,6 +615,8 @@ if with_asm_arch == 'x86' or with_asm_arch == 'x86_64'
     capture : true,
   )
 endif
+
+inc_libmesa_asm = []
 if with_asm_arch == 'x86'
   files_libmesa_common += files(
     'x86/assyntax.h',
@@ -641,10 +647,18 @@ if with_asm_arch == 'x86'
     'x86/sse_normal.S',
     'x86/read_rgba_span_x86.S',
   )
+  inc_libmesa_asm = include_directories('x86')
 elif with_asm_arch == 'x86_64'
   files_libmesa_common += files('x86-64/x86-64.h', 'x86-64/xform4.S')
+  inc_libmesa_asm = include_directories('x86-64')
+elif with_asm_arch == 'sparc'
+  files_libmesa_common += files(
+    'sparc/sparc_clip.S',
+    'sparc/norm.S',
+    'sparc/xform.S',
+  )
+  inc_libmesa_asm = include_directories('sparc')
 endif
-# TODO: sparc
 
 format_fallback_c = custom_target(
   'format_fallback.c',
@@ -708,7 +722,7 @@ libmesa_classic = static_library(
   [files_libmesa_common, files_libmesa_classic],
   c_args : [c_vis_args, c_msvc_compat_args],
   cpp_args : [cpp_vis_args, cpp_msvc_compat_args],
-  include_directories : [inc_common, include_directories('main')],
+  include_directories : [inc_common, inc_libmesa_asm, include_directories('main')],
   link_with : [libglsl, libmesa_sse41],
   dependencies : idep_nir_headers,
   build_by_default : false,
@@ -719,7 +733,7 @@ libmesa_gallium = static_library(
   [files_libmesa_common, files_libmesa_gallium],
   c_args : [c_vis_args, c_msvc_compat_args],
   cpp_args : [cpp_vis_args, cpp_msvc_compat_args],
-  include_directories : [inc_common, include_directories('main')],
+  include_directories : [inc_common, inc_libmesa_asm, include_directories('main')],
   link_with : [libglsl, libmesa_sse41],
   dependencies : [idep_nir_headers, dep_vdpau],
   build_by_default : false,

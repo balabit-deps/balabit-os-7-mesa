@@ -8,17 +8,19 @@ http://github.com/freedreno/envytools/
 git clone https://github.com/freedreno/envytools.git
 
 The rules-ng-ng source files this header was generated from are:
-- /home/robclark/src/freedreno/envytools/rnndb/adreno.xml               (    431 bytes, from 2017-05-17 13:21:27)
-- /home/robclark/src/freedreno/envytools/rnndb/freedreno_copyright.xml  (   1572 bytes, from 2017-05-17 13:21:27)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/a2xx.xml          (  37162 bytes, from 2017-05-17 13:21:27)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/adreno_common.xml (  13612 bytes, from 2017-12-19 18:19:46)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/adreno_pm4.xml    (  34499 bytes, from 2018-01-03 15:58:51)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/a3xx.xml          (  83840 bytes, from 2017-05-17 13:21:27)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/a4xx.xml          ( 112086 bytes, from 2017-12-19 18:19:46)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/a5xx.xml          ( 146261 bytes, from 2018-01-03 15:58:51)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/ocmem.xml         (   1773 bytes, from 2017-05-17 13:21:27)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno.xml               (    501 bytes, from 2018-01-31 18:26:32)
+- /home/robclark/src/freedreno/envytools/rnndb/freedreno_copyright.xml  (   1572 bytes, from 2018-01-08 14:56:24)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/a2xx.xml          (  36805 bytes, from 2018-05-20 19:03:35)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/adreno_common.xml (  13634 bytes, from 2018-06-10 17:35:36)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/adreno_pm4.xml    (  41584 bytes, from 2018-06-18 14:25:44)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/a3xx.xml          (  83840 bytes, from 2018-01-10 16:21:40)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/a4xx.xml          ( 112086 bytes, from 2018-01-08 14:56:24)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/a5xx.xml          ( 147158 bytes, from 2018-06-18 14:25:44)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/a6xx.xml          (  88437 bytes, from 2018-06-18 14:25:44)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/a6xx_gmu.xml      (  10431 bytes, from 2018-06-10 17:37:04)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/ocmem.xml         (   1773 bytes, from 2018-01-08 14:56:24)
 
-Copyright (C) 2013-2017 by the following authors:
+Copyright (C) 2013-2018 by the following authors:
 - Rob Clark <robdclark@gmail.com> (robclark)
 - Ilia Mirkin <imirkin@alum.mit.edu> (imirkin)
 
@@ -84,13 +86,12 @@ enum a2xx_sq_surfaceformat {
 	FMT_5_5_5_1 = 13,
 	FMT_8_8_8_8_A = 14,
 	FMT_4_4_4_4 = 15,
-	FMT_10_11_11 = 16,
-	FMT_11_11_10 = 17,
+	FMT_8_8_8 = 16,
 	FMT_DXT1 = 18,
 	FMT_DXT2_3 = 19,
 	FMT_DXT4_5 = 20,
+	FMT_10_10_10_2 = 21,
 	FMT_24_8 = 22,
-	FMT_24_8_FLOAT = 23,
 	FMT_16 = 24,
 	FMT_16_16 = 25,
 	FMT_16_16_16_16 = 26,
@@ -106,29 +107,23 @@ enum a2xx_sq_surfaceformat {
 	FMT_32_FLOAT = 36,
 	FMT_32_32_FLOAT = 37,
 	FMT_32_32_32_32_FLOAT = 38,
-	FMT_32_AS_8 = 39,
-	FMT_32_AS_8_8 = 40,
-	FMT_16_MPEG = 41,
-	FMT_16_16_MPEG = 42,
-	FMT_8_INTERLACED = 43,
-	FMT_32_AS_8_INTERLACED = 44,
-	FMT_32_AS_8_8_INTERLACED = 45,
-	FMT_16_INTERLACED = 46,
-	FMT_16_MPEG_INTERLACED = 47,
-	FMT_16_16_MPEG_INTERLACED = 48,
+	FMT_ATI_TC_RGB = 39,
+	FMT_ATI_TC_RGBA = 40,
+	FMT_ATI_TC_555_565_RGB = 41,
+	FMT_ATI_TC_555_565_RGBA = 42,
+	FMT_ATI_TC_RGBA_INTERP = 43,
+	FMT_ATI_TC_555_565_RGBA_INTERP = 44,
+	FMT_ETC1_RGBA_INTERP = 46,
+	FMT_ETC1_RGB = 47,
+	FMT_ETC1_RGBA = 48,
 	FMT_DXN = 49,
-	FMT_8_8_8_8_AS_16_16_16_16 = 50,
-	FMT_DXT1_AS_16_16_16_16 = 51,
-	FMT_DXT2_3_AS_16_16_16_16 = 52,
-	FMT_DXT4_5_AS_16_16_16_16 = 53,
+	FMT_2_3_3 = 51,
 	FMT_2_10_10_10_AS_16_16_16_16 = 54,
-	FMT_10_11_11_AS_16_16_16_16 = 55,
-	FMT_11_11_10_AS_16_16_16_16 = 56,
+	FMT_10_10_10_2_AS_16_16_16_16 = 55,
 	FMT_32_32_32_FLOAT = 57,
 	FMT_DXT3A = 58,
 	FMT_DXT5A = 59,
 	FMT_CTX1 = 60,
-	FMT_DXT3A_AS_1_1_1_1 = 61,
 };
 
 enum a2xx_sq_ps_vtx_mode {

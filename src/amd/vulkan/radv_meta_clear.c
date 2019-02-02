@@ -366,10 +366,10 @@ emit_color_clear(struct radv_cmd_buffer *cmd_buffer,
 
 	struct radv_subpass clear_subpass = {
 		.color_count = 1,
-		.color_attachments = (VkAttachmentReference[]) {
+		.color_attachments = (struct radv_subpass_attachment[]) {
 			subpass->color_attachments[clear_att->colorAttachment]
 		},
-		.depth_stencil_attachment = (VkAttachmentReference) { VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_UNDEFINED }
+		.depth_stencil_attachment = (struct radv_subpass_attachment) { VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_UNDEFINED }
 	};
 
 	radv_cmd_buffer_set_subpass(cmd_buffer, &clear_subpass, false);
@@ -553,12 +553,12 @@ static bool depth_view_can_fast_clear(struct radv_cmd_buffer *cmd_buffer,
 	    clear_rect->rect.extent.width != iview->extent.width ||
 	    clear_rect->rect.extent.height != iview->extent.height)
 		return false;
-	if (iview->image->tc_compatible_htile &&
+	if (radv_image_is_tc_compat_htile(iview->image) &&
 	    (((aspects & VK_IMAGE_ASPECT_DEPTH_BIT) && clear_value.depth != 0.0 &&
 	      clear_value.depth != 1.0) ||
 	     ((aspects & VK_IMAGE_ASPECT_STENCIL_BIT) && clear_value.stencil != 0)))
 		return false;
-	if (iview->image->surface.htile_size &&
+	if (radv_image_has_htile(iview->image) &&
 	    iview->base_mip == 0 &&
 	    iview->base_layer == 0 &&
 	    radv_layout_is_htile_compressed(iview->image, layout, queue_mask) &&
@@ -645,7 +645,8 @@ emit_depthstencil_clear(struct radv_cmd_buffer *cmd_buffer,
 	if (depth_view_can_fast_clear(cmd_buffer, iview, aspects,
 	                              subpass->depth_stencil_attachment.layout,
 	                              clear_rect, clear_value))
-		radv_set_depth_clear_regs(cmd_buffer, iview->image, clear_value, aspects);
+		radv_update_ds_clear_metadata(cmd_buffer, iview->image,
+					      clear_value, aspects);
 
 	radv_CmdSetViewport(radv_cmd_buffer_to_handle(cmd_buffer), 0, 1, &(VkViewport) {
 			.x = clear_rect->rect.offset.x,
@@ -682,7 +683,7 @@ emit_fast_htile_clear(struct radv_cmd_buffer *cmd_buffer,
 	VkImageAspectFlags aspects = clear_att->aspectMask;
 	uint32_t clear_word, flush_bits;
 
-	if (!iview->image->surface.htile_size)
+	if (!radv_image_has_htile(iview->image))
 		return false;
 
 	if (cmd_buffer->device->instance->debug_flags & RADV_DEBUG_NO_FAST_CLEARS)
@@ -717,6 +718,14 @@ emit_fast_htile_clear(struct radv_cmd_buffer *cmd_buffer,
 	if ((clear_value.depth != 0.0 && clear_value.depth != 1.0) || !(aspects & VK_IMAGE_ASPECT_DEPTH_BIT))
 		goto fail;
 
+	/* GFX8 only supports 32-bit depth surfaces but we can enable TC-compat
+	 * HTILE for 16-bit surfaces if no Z planes are compressed. Though,
+	 * fast HTILE clears don't seem to work.
+	 */
+	if (cmd_buffer->device->physical_device->rad_info.chip_class == VI &&
+	    iview->image->vk_format == VK_FORMAT_D16_UNORM)
+		goto fail;
+
 	if (vk_format_aspects(iview->image->vk_format) & VK_IMAGE_ASPECT_STENCIL_BIT) {
 		if (clear_value.stencil != 0 || !(aspects & VK_IMAGE_ASPECT_STENCIL_BIT))
 			goto fail;
@@ -736,7 +745,7 @@ emit_fast_htile_clear(struct radv_cmd_buffer *cmd_buffer,
 				      iview->image->offset + iview->image->htile_offset,
 				      iview->image->surface.htile_size, clear_word);
 
-	radv_set_depth_clear_regs(cmd_buffer, iview->image, clear_value, aspects);
+	radv_update_ds_clear_metadata(cmd_buffer, iview->image, clear_value, aspects);
 	if (post_flush) {
 		*post_flush |= flush_bits;
 	} else {
@@ -859,6 +868,40 @@ fail:
 	return res;
 }
 
+static uint32_t
+radv_get_cmask_fast_clear_value(const struct radv_image *image)
+{
+	uint32_t value = 0; /* Default value when no DCC. */
+
+	/* The fast-clear value is different for images that have both DCC and
+	 * CMASK metadata.
+	 */
+	if (radv_image_has_dcc(image)) {
+		/* DCC fast clear with MSAA should clear CMASK to 0xC. */
+		return image->info.samples > 1 ? 0xcccccccc : 0xffffffff;
+	}
+
+	return value;
+}
+
+uint32_t
+radv_clear_cmask(struct radv_cmd_buffer *cmd_buffer,
+		 struct radv_image *image, uint32_t value)
+{
+	return radv_fill_buffer(cmd_buffer, image->bo,
+				image->offset + image->cmask.offset,
+				image->cmask.size, value);
+}
+
+uint32_t
+radv_clear_dcc(struct radv_cmd_buffer *cmd_buffer,
+	       struct radv_image *image, uint32_t value)
+{
+	return radv_fill_buffer(cmd_buffer, image->bo,
+				image->offset + image->dcc_offset,
+				image->surface.dcc_size, value);
+}
+
 static void vi_get_fast_clear_parameters(VkFormat format,
 					 const VkClearColorValue *clear_value,
 					 uint32_t* reset_value,
@@ -951,10 +994,11 @@ emit_fast_color_clear(struct radv_cmd_buffer *cmd_buffer,
 	const struct radv_framebuffer *fb = cmd_buffer->state.framebuffer;
 	const struct radv_image_view *iview = fb->attachments[pass_att].attachment;
 	VkClearColorValue clear_value = clear_att->clearValue.color;
-	uint32_t clear_color[2], flush_bits;
+	uint32_t clear_color[2], flush_bits = 0;
+	uint32_t cmask_clear_value;
 	bool ret;
 
-	if (!iview->image->cmask.size && !iview->image->surface.dcc_size)
+	if (!radv_image_has_cmask(iview->image) && !radv_image_has_dcc(iview->image))
 		return false;
 
 	if (cmd_buffer->device->instance->debug_flags & RADV_DEBUG_NO_FAST_CLEARS)
@@ -976,8 +1020,6 @@ emit_fast_color_clear(struct radv_cmd_buffer *cmd_buffer,
 	if (iview->image->info.levels > 1)
 		goto fail;
 
-	if (iview->image->surface.is_linear)
-		goto fail;
 	if (!radv_image_extent_compare(iview->image, &iview->extent))
 		goto fail;
 
@@ -995,12 +1037,12 @@ emit_fast_color_clear(struct radv_cmd_buffer *cmd_buffer,
 		goto fail;
 
 	/* RB+ doesn't work with CMASK fast clear on Stoney. */
-	if (!iview->image->surface.dcc_size &&
+	if (!radv_image_has_dcc(iview->image) &&
 	    cmd_buffer->device->physical_device->rad_info.family == CHIP_STONEY)
 		goto fail;
 
 	/* DCC */
-	ret = radv_format_pack_clear_color(iview->image->vk_format,
+	ret = radv_format_pack_clear_color(iview->vk_format,
 					   clear_color, &clear_value);
 	if (ret == false)
 		goto fail;
@@ -1012,23 +1054,48 @@ emit_fast_color_clear(struct radv_cmd_buffer *cmd_buffer,
 	} else
 		cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_FLUSH_AND_INV_CB |
 		                                RADV_CMD_FLAG_FLUSH_AND_INV_CB_META;
+
+	cmask_clear_value = radv_get_cmask_fast_clear_value(iview->image);
+
 	/* clear cmask buffer */
-	if (iview->image->surface.dcc_size) {
+	if (radv_image_has_dcc(iview->image)) {
 		uint32_t reset_value;
 		bool can_avoid_fast_clear_elim;
-		vi_get_fast_clear_parameters(iview->image->vk_format,
+		bool need_decompress_pass = false;
+
+		vi_get_fast_clear_parameters(iview->vk_format,
 					     &clear_value, &reset_value,
 					     &can_avoid_fast_clear_elim);
 
-		flush_bits = radv_fill_buffer(cmd_buffer, iview->image->bo,
-					      iview->image->offset + iview->image->dcc_offset,
-					      iview->image->surface.dcc_size, reset_value);
+		if (iview->image->info.samples > 1) {
+			/* DCC fast clear with MSAA should clear CMASK. */
+			/* FIXME: This doesn't work for now. There is a
+			 * hardware bug with fast clears and DCC for MSAA
+			 * textures. AMDVLK has a workaround but it doesn't
+			 * seem to work here. Note that we might emit useless
+			 * CB flushes but that shouldn't matter.
+			 */
+			if (!can_avoid_fast_clear_elim)
+				goto fail;
+
+			assert(radv_image_has_cmask(iview->image));
+
+			flush_bits = radv_clear_cmask(cmd_buffer, iview->image,
+						      cmask_clear_value);
+
+			need_decompress_pass = true;
+		}
+
+		if (!can_avoid_fast_clear_elim)
+			need_decompress_pass = true;
+
+		flush_bits |= radv_clear_dcc(cmd_buffer, iview->image, reset_value);
+
 		radv_set_dcc_need_cmask_elim_pred(cmd_buffer, iview->image,
-						  !can_avoid_fast_clear_elim);
+						  need_decompress_pass);
 	} else {
-		flush_bits = radv_fill_buffer(cmd_buffer, iview->image->bo,
-					      iview->image->offset + iview->image->cmask.offset,
-					      iview->image->cmask.size, 0);
+		flush_bits = radv_clear_cmask(cmd_buffer, iview->image,
+					      cmask_clear_value);
 	}
 
 	if (post_flush) {
@@ -1037,7 +1104,8 @@ emit_fast_color_clear(struct radv_cmd_buffer *cmd_buffer,
 		cmd_buffer->state.flush_bits |= flush_bits;
 	}
 
-	radv_set_color_clear_regs(cmd_buffer, iview->image, subpass_att, clear_color);
+	radv_update_color_clear_metadata(cmd_buffer, iview->image, subpass_att,
+					 clear_color);
 
 	return true;
 fail:

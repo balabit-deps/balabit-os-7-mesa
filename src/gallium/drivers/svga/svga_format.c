@@ -368,6 +368,7 @@ static const struct vgpu10_format_entry format_conversion_table[] =
    { PIPE_FORMAT_R10G10B10X2_UNORM,     SVGA3D_FORMAT_INVALID,      SVGA3D_FORMAT_INVALID,       0 },
    { PIPE_FORMAT_A1B5G5R5_UNORM,        SVGA3D_FORMAT_INVALID,      SVGA3D_FORMAT_INVALID,       0 },
    { PIPE_FORMAT_X1B5G5R5_UNORM,        SVGA3D_FORMAT_INVALID,      SVGA3D_FORMAT_INVALID,       0 },
+   { PIPE_FORMAT_A4B4G4R4_UNORM,        SVGA3D_FORMAT_INVALID,      SVGA3D_FORMAT_INVALID,       0 },
 };
 
 
@@ -2081,6 +2082,7 @@ svga_is_format_supported(struct pipe_screen *screen,
                          enum pipe_format format,
                          enum pipe_texture_target target,
                          unsigned sample_count,
+                         unsigned storage_sample_count,
                          unsigned bindings)
 {
    struct svga_screen *ss = svga_screen(screen);
@@ -2089,6 +2091,9 @@ svga_is_format_supported(struct pipe_screen *screen,
    SVGA3dSurfaceFormatCaps mask;
 
    assert(bindings);
+
+   if (MAX2(1, sample_count) != MAX2(1, storage_sample_count))
+      return false;
 
    if (sample_count > 1) {
       /* In ms_samples, if bit N is set it means that we support

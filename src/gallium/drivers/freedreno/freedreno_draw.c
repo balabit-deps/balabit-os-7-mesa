@@ -170,9 +170,6 @@ fd_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info)
 
 		buffers |= PIPE_CLEAR_COLOR0 << i;
 
-		if (surf->nr_samples > 1)
-			batch->gmem_reason |= FD_GMEM_MSAA_ENABLED;
-
 		if (fd_blend_enabled(ctx, i))
 			batch->gmem_reason |= FD_GMEM_BLEND_ENABLED;
 	}
@@ -487,6 +484,12 @@ fd_launch_grid(struct pipe_context *pctx, const struct pipe_grid_info *info)
 	/* Mark textures as being read */
 	foreach_bit(i, ctx->tex[PIPE_SHADER_COMPUTE].valid_textures)
 		resource_read(batch, ctx->tex[PIPE_SHADER_COMPUTE].textures[i]->texture);
+
+	/* For global buffers, we don't really know if read or written, so assume
+	 * the worst:
+	 */
+	foreach_bit(i, ctx->global_bindings.enabled_mask)
+		resource_written(batch, ctx->global_bindings.buf[i]);
 
 	if (info->indirect)
 		resource_read(batch, info->indirect);
