@@ -5,3 +5,4 @@
 dont-enable-10bpc-by-default.diff
 disable-intel-ccs-compression.diff
 intel-whl-aml-cfl-ids.diff
+i965-revert-enabling-softpin.diff

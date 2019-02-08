@@ -1,3 +1,10 @@
+mesa (18.2.2-0ubuntu1~18.04.2) bionic; urgency=medium
+
+  * i965-revert-enabling-softpin.diff: Don't enable softpin, causes
+    issues on 32bit installs. (LP: #1815172)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Fri, 08 Feb 2019 19:12:58 +0200
+
 mesa (18.2.2-0ubuntu1~18.04.1) bionic; urgency=medium
 
   * Backport for 18.04.2 HWE stack update. (LP: #1798597)
