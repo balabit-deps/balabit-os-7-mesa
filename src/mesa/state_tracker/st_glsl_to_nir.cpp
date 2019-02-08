@@ -388,7 +388,7 @@ st_glsl_to_nir(struct st_context *st, struct gl_program *prog,
          ~prev_stages & shader_program->data->linked_stages;
 
       nir->info.next_stage = stages_mask ?
-         (gl_shader_stage) ffs(stages_mask) : MESA_SHADER_FRAGMENT;
+         (gl_shader_stage) u_bit_scan(&stages_mask) : MESA_SHADER_FRAGMENT;
    } else {
       nir->info.next_stage = MESA_SHADER_FRAGMENT;
    }
@@ -752,7 +752,8 @@ st_link_nir(struct gl_context *ctx,
           * the pipe_stream_output->output_register field is based on the
           * pre-compacted driver_locations.
           */
-         if (!prev_shader->sh.LinkedTransformFeedback)
+         if (!(prev_shader->sh.LinkedTransformFeedback &&
+               prev_shader->sh.LinkedTransformFeedback->NumVarying > 0))
             nir_compact_varyings(shader_program->_LinkedShaders[prev]->Program->nir,
                               nir, ctx->API != API_OPENGL_COMPAT);
       }

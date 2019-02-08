@@ -3295,8 +3295,7 @@ radv_compute_ia_multi_vgt_param_helpers(struct radv_pipeline *pipeline,
 		    (pipeline->graphics.prim_restart_enable &&
 		     (device->physical_device->rad_info.family < CHIP_POLARIS10 ||
 		      (prim != V_008958_DI_PT_POINTLIST &&
-		       prim != V_008958_DI_PT_LINESTRIP &&
-		       prim != V_008958_DI_PT_TRISTRIP))))
+		       prim != V_008958_DI_PT_LINESTRIP))))
 			ia_multi_vgt_param.wd_switch_on_eop = true;
 	}
 
@@ -3335,6 +3334,17 @@ radv_compute_ia_multi_vgt_param_helpers(struct radv_pipeline *pipeline,
 				ia_multi_vgt_param.partial_vs_wave = true;
 			}
 		}
+	}
+
+	/* Workaround for a VGT hang when strip primitive types are used with
+	 * primitive restart.
+	 */
+	if (pipeline->graphics.prim_restart_enable &&
+	    (prim == V_008958_DI_PT_LINESTRIP ||
+	     prim == V_008958_DI_PT_TRISTRIP ||
+	     prim == V_008958_DI_PT_LINESTRIP_ADJ ||
+	     prim == V_008958_DI_PT_TRISTRIP_ADJ)) {
+		ia_multi_vgt_param.partial_vs_wave = true;
 	}
 
 	ia_multi_vgt_param.base =
