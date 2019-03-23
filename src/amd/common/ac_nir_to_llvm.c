@@ -1400,7 +1400,7 @@ static LLVMValueRef visit_load_push_constant(struct ac_nir_context *ctx,
 
 	if (instr->dest.ssa.bit_size == 16) {
 		unsigned load_dwords = instr->dest.ssa.num_components / 2 + 1;
-		LLVMTypeRef vec_type = LLVMVectorType(LLVMInt16Type(), 2 * load_dwords);
+		LLVMTypeRef vec_type = LLVMVectorType(LLVMInt16TypeInContext(ctx->ac.context), 2 * load_dwords);
 		ptr = ac_cast_ptr(&ctx->ac, ptr, vec_type);
 		LLVMValueRef res = LLVMBuildLoad(ctx->ac.builder, ptr, "");
 		res = LLVMBuildBitCast(ctx->ac.builder, res, vec_type, "");
@@ -1621,31 +1621,39 @@ static LLVMValueRef visit_atomic_ssbo(struct ac_nir_context *ctx,
 static LLVMValueRef visit_load_buffer(struct ac_nir_context *ctx,
                                       const nir_intrinsic_instr *instr)
 {
-	LLVMValueRef results[2];
-	int load_bytes;
 	int elem_size_bytes = instr->dest.ssa.bit_size / 8;
 	int num_components = instr->num_components;
-	int num_bytes = num_components * elem_size_bytes;
 
-	for (int i = 0; i < num_bytes; i += load_bytes) {
-		load_bytes = MIN2(num_bytes - i, 16);
-		const char *load_name;
-		LLVMTypeRef data_type;
-		LLVMValueRef offset = get_src(ctx, instr->src[1]);
-		LLVMValueRef immoffset = LLVMConstInt(ctx->ac.i32, i, false);
-		LLVMValueRef rsrc = ctx->abi->load_ssbo(ctx->abi,
-							get_src(ctx, instr->src[0]), false);
-		LLVMValueRef vindex = ctx->ac.i32_0;
+	LLVMValueRef offset = get_src(ctx, instr->src[1]);
+	LLVMValueRef rsrc = ctx->abi->load_ssbo(ctx->abi,
+						get_src(ctx, instr->src[0]), false);
+	LLVMValueRef vindex = ctx->ac.i32_0;
 
-		int idx = i ? 1 : 0;
+	LLVMTypeRef def_type = get_def_type(ctx, &instr->dest.ssa);
+	LLVMTypeRef def_elem_type = num_components > 1 ? LLVMGetElementType(def_type) : def_type;
+
+	LLVMValueRef results[4];
+	for (int i = 0; i < num_components;) {
+		int num_elems = num_components - i;
+		if (elem_size_bytes < 4)
+			num_elems = 1;
+		if (num_elems * elem_size_bytes > 16)
+			num_elems = 16 / elem_size_bytes;
+		int load_bytes = num_elems * elem_size_bytes;
+
+		LLVMValueRef immoffset = LLVMConstInt(ctx->ac.i32, i * elem_size_bytes, false);
+
+		LLVMValueRef ret;
 		if (load_bytes == 2) {
-			results[idx] = ac_build_tbuffer_load_short(&ctx->ac,
-								   rsrc,
-								   vindex,
-								   offset,
-								   ctx->ac.i32_0,
-								   immoffset);
+			ret = ac_build_tbuffer_load_short(&ctx->ac,
+							  rsrc,
+							  vindex,
+							  offset,
+							  ctx->ac.i32_0,
+							  immoffset);
 		} else {
+			const char *load_name;
+			LLVMTypeRef data_type;
 			switch (load_bytes) {
 			case 16:
 			case 12:
@@ -1671,33 +1679,23 @@ static LLVMValueRef visit_load_buffer(struct ac_nir_context *ctx,
 				ctx->ac.i1false,
 				ctx->ac.i1false,
 			};
-			results[idx] = ac_build_intrinsic(&ctx->ac, load_name, data_type, params, 5, 0);
-			unsigned num_elems = ac_get_type_size(data_type) / elem_size_bytes;
-			LLVMTypeRef resTy = LLVMVectorType(LLVMIntType(instr->dest.ssa.bit_size), num_elems);
-			results[idx] = LLVMBuildBitCast(ctx->ac.builder, results[idx], resTy, "");
-		}
-	}
-
-	assume(results[0]);
-	LLVMValueRef ret = results[0];
-	if (num_bytes > 16 || num_components == 3) {
-		LLVMValueRef masks[] = {
-		        LLVMConstInt(ctx->ac.i32, 0, false), LLVMConstInt(ctx->ac.i32, 1, false),
-		        LLVMConstInt(ctx->ac.i32, 2, false), LLVMConstInt(ctx->ac.i32, 3, false),
-		};
-
-		if (num_bytes > 16 && num_components == 3) {
-			/* we end up with a v4f32 and v2f32 but shuffle fails on that */
-			results[1] = ac_build_expand_to_vec4(&ctx->ac, results[1], 2);
+			ret = ac_build_intrinsic(&ctx->ac, load_name, data_type, params, 5, 0);
 		}
 
-		LLVMValueRef swizzle = LLVMConstVector(masks, num_components);
-		ret = LLVMBuildShuffleVector(ctx->ac.builder, results[0],
-					     results[num_bytes > 16 ? 1 : 0], swizzle, "");
+		LLVMTypeRef byte_vec = LLVMVectorType(ctx->ac.i8, ac_get_type_size(LLVMTypeOf(ret)));
+		ret = LLVMBuildBitCast(ctx->ac.builder, ret, byte_vec, "");
+		ret = ac_trim_vector(&ctx->ac, ret, load_bytes);
+
+		LLVMTypeRef ret_type = LLVMVectorType(def_elem_type, num_elems);
+		ret = LLVMBuildBitCast(ctx->ac.builder, ret, ret_type, "");
+
+		for (unsigned j = 0; j < num_elems; j++) {
+			results[i + j] = LLVMBuildExtractElement(ctx->ac.builder, ret, LLVMConstInt(ctx->ac.i32, j, false), "");
+		}
+		i += num_elems;
 	}
 
-	return LLVMBuildBitCast(ctx->ac.builder, ret,
-	                        get_def_type(ctx, &instr->dest.ssa), "");
+	return ac_build_gather_values(&ctx->ac, results, num_components);
 }
 
 static LLVMValueRef visit_load_ubo_buffer(struct ac_nir_context *ctx,
