@@ -837,6 +837,8 @@ enum marshal_dispatch_cmd_id
    DISPATCH_CMD_EndPerfQueryINTEL,
    DISPATCH_CMD_PolygonOffsetClampEXT,
    DISPATCH_CMD_FramebufferFetchBarrierEXT,
+   DISPATCH_CMD_RenderbufferStorageMultisampleAdvancedAMD,
+   DISPATCH_CMD_NamedRenderbufferStorageMultisampleAdvancedAMD,
    DISPATCH_CMD_StencilFuncSeparateATI,
    DISPATCH_CMD_ClearColorIiEXT,
    DISPATCH_CMD_ClearColorIuiEXT,
@@ -932,6 +934,7 @@ enum marshal_dispatch_cmd_id
    DISPATCH_CMD_DrawTexxOES,
    DISPATCH_CMD_DrawTexxvOES,
    DISPATCH_CMD_DiscardFramebufferEXT,
+   DISPATCH_CMD_FramebufferTexture2DMultisampleEXT,
    DISPATCH_CMD_DepthRangeIndexedfOES,
 };
 

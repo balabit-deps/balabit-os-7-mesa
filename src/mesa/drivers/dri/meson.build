@@ -54,9 +54,13 @@ if dri_drivers != []
       dep_selinux, dep_libdrm, dep_expat, dep_m, dep_thread, dep_dl, idep_nir,
     ],
     link_args : [ld_args_build_id, ld_args_bsymbolic, ld_args_gc_sections],
+    # Will be deleted during installation, see install_megadrivers.py
+    install : true,
+    install_dir : dri_drivers_path,
   )
 
   meson.add_install_script(
+    prog_python.path(),
     join_paths(meson.source_root(), 'bin/install_megadrivers.py'),
     libmesa_dri_drivers.full_path(),
     dri_drivers_path,
@@ -77,7 +81,7 @@ if with_dri
     filebase : 'dri',
     description : 'Direct Rendering Infrastructure',
     version : meson.project_version(),
-    variables : ['dridriverdir=${prefix}/' + dri_drivers_path],
+    variables : ['dridriverdir=' + dri_drivers_path],
     requires_private : dri_req_private,
   )
 endif

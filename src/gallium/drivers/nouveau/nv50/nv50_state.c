@@ -315,7 +315,7 @@ nv50_rasterizer_state_create(struct pipe_context *pipe,
       SB_DATA    (so, fui(cso->offset_clamp));
    }
 
-   if (cso->depth_clip) {
+   if (cso->depth_clip_near) {
       reg = 0;
    } else {
       reg =
@@ -967,7 +967,7 @@ nv50_set_framebuffer_state(struct pipe_context *pipe,
 
    util_copy_framebuffer_state(&nv50->framebuffer, fb);
 
-   nv50->dirty_3d |= NV50_NEW_3D_FRAMEBUFFER;
+   nv50->dirty_3d |= NV50_NEW_3D_FRAMEBUFFER | NV50_NEW_3D_TEXTURES;
 }
 
 static void

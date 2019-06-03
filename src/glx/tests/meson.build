@@ -49,6 +49,7 @@ if with_shared_glapi
         inc_glx,
       ],
       dependencies : [dep_libdrm, dep_glproto, dep_thread, idep_gtest]
-    )
+    ),
+    suite : ['glx'],
   )
 endif

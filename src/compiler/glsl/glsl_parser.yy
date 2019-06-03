@@ -164,6 +164,7 @@ static bool match_layout_qualifier(const char *s1, const char *s2,
 %token VERSION_TOK EXTENSION LINE COLON EOL INTERFACE OUTPUT
 %token PRAGMA_DEBUG_ON PRAGMA_DEBUG_OFF
 %token PRAGMA_OPTIMIZE_ON PRAGMA_OPTIMIZE_OFF
+%token PRAGMA_WARNING_ON PRAGMA_WARNING_OFF
 %token PRAGMA_INVARIANT_ALL
 %token LAYOUT_TOK
 %token DOT_TOK
@@ -246,6 +247,7 @@ static bool match_layout_qualifier(const char *s1, const char *s2,
 %type <n> unary_operator
 %type <expression> function_identifier
 %type <node> external_declaration
+%type <node> pragma_statement
 %type <declarator_list> init_declarator_list
 %type <declarator_list> single_declaration
 %type <expression> initializer
@@ -328,10 +330,10 @@ version_statement:
    ;
 
 pragma_statement:
-   PRAGMA_DEBUG_ON EOL
-   | PRAGMA_DEBUG_OFF EOL
-   | PRAGMA_OPTIMIZE_ON EOL
-   | PRAGMA_OPTIMIZE_OFF EOL
+   PRAGMA_DEBUG_ON EOL { $$ = NULL; }
+   | PRAGMA_DEBUG_OFF EOL { $$ = NULL; }
+   | PRAGMA_OPTIMIZE_ON EOL { $$ = NULL; }
+   | PRAGMA_OPTIMIZE_OFF EOL { $$ = NULL; }
    | PRAGMA_INVARIANT_ALL EOL
    {
       /* Pragma invariant(all) cannot be used in a fragment shader.
@@ -353,6 +355,18 @@ pragma_statement:
       } else {
          state->all_invariant = true;
       }
+
+      $$ = NULL;
+   }
+   | PRAGMA_WARNING_ON EOL
+   {
+      void *mem_ctx = state->linalloc;
+      $$ = new(mem_ctx) ast_warnings_toggle(true);
+   }
+   | PRAGMA_WARNING_OFF EOL
+   {
+      void *mem_ctx = state->linalloc;
+      $$ = new(mem_ctx) ast_warnings_toggle(false);
    }
    ;
 
@@ -896,6 +910,23 @@ parameter_declarator:
       $$->type->specifier = $1;
       $$->identifier = $2;
       state->symbols->add_variable(new(state) ir_variable(NULL, $2, ir_var_auto));
+   }
+   | layout_qualifier type_specifier any_identifier
+   {
+      if (state->allow_layout_qualifier_on_function_parameter) {
+         void *ctx = state->linalloc;
+         $$ = new(ctx) ast_parameter_declarator();
+         $$->set_location_range(@2, @3);
+         $$->type = new(ctx) ast_fully_specified_type();
+         $$->type->set_location(@2);
+         $$->type->specifier = $2;
+         $$->identifier = $3;
+         state->symbols->add_variable(new(state) ir_variable(NULL, $3, ir_var_auto));
+      } else {
+         _mesa_glsl_error(&@1, state,
+                          "is is not allowed on function parameter");
+         YYERROR;
+      }
    }
    | type_specifier any_identifier array_specifier
    {
@@ -1450,10 +1481,12 @@ layout_qualifier_id:
                           "only valid in fragment shader input layout declaration.");
       } else if (pixel_interlock_ordered + pixel_interlock_unordered +
                  sample_interlock_ordered + sample_interlock_unordered > 0 &&
-                 !state->ARB_fragment_shader_interlock_enable) {
+                 !state->ARB_fragment_shader_interlock_enable &&
+                 !state->NV_fragment_shader_interlock_enable) {
          _mesa_glsl_error(& @1, state,
                           "interlock layout qualifier present, but the "
-                          "GL_ARB_fragment_shader_interlock extension is not "
+                          "GL_ARB_fragment_shader_interlock or "
+                          "GL_NV_fragment_shader_interlock extension is not "
                           "enabled.");
       } else {
          $$.flags.q.pixel_interlock_ordered = pixel_interlock_ordered;
@@ -2704,7 +2737,7 @@ jump_statement:
 external_declaration:
    function_definition      { $$ = $1; }
    | declaration            { $$ = $1; }
-   | pragma_statement       { $$ = NULL; }
+   | pragma_statement       { $$ = $1; }
    | layout_defaults        { $$ = $1; }
    | ';'                    { $$ = NULL; }
    ;

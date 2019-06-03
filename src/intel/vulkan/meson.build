@@ -1,4 +1,4 @@
-# Copyright © 2017-2018 Intel Corporation
+# Copyright © 2017-2019 Intel Corporation
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -25,7 +25,7 @@ anv_entrypoints = custom_target(
   input : ['anv_entrypoints_gen.py', vk_api_xml],
   output : ['anv_entrypoints.h', 'anv_entrypoints.c'],
   command : [
-    prog_python2, '@INPUT0@', '--xml', '@INPUT1@',
+    prog_python, '@INPUT0@', '--xml', '@INPUT1@',
     '--outdir', meson.current_build_dir(),
   ],
   depend_files : anv_extensions_py,
@@ -36,7 +36,7 @@ anv_extensions_c = custom_target(
   input : ['anv_extensions_gen.py', vk_api_xml],
   output : 'anv_extensions.c',
   command : [
-    prog_python2, '@INPUT0@', '--xml', '@INPUT1@',
+    prog_python, '@INPUT0@', '--xml', '@INPUT1@',
     '--out-c', '@OUTPUT@',
   ],
   depend_files : anv_extensions_py,
@@ -47,7 +47,7 @@ anv_extensions_h = custom_target(
   input : ['anv_extensions_gen.py', vk_api_xml],
   output : 'anv_extensions.h',
   command : [
-    prog_python2, '@INPUT0@', '--xml', '@INPUT1@',
+    prog_python, '@INPUT0@', '--xml', '@INPUT1@',
     '--out-h', '@OUTPUT@',
   ],
   depend_files : anv_extensions_py,
@@ -58,7 +58,7 @@ intel_icd = custom_target(
   input : 'anv_icd.py',
   output : 'intel_icd.@0@.json'.format(host_machine.cpu()),
   command : [
-    prog_python2, '@INPUT@',
+    prog_python, '@INPUT@',
     '--lib-path', join_paths(get_option('prefix'), get_option('libdir')),
     '--out', '@OUTPUT@',
   ],
@@ -73,7 +73,7 @@ dev_icd = custom_target(
   input : 'anv_icd.py',
   output : 'dev_icd.@0@.json'.format(host_machine.cpu()),
   command : [
-    prog_python2, '@INPUT@', '--lib-path', meson.current_build_dir(),
+    prog_python, '@INPUT@', '--lib-path', meson.current_build_dir(),
     '--out', '@OUTPUT@'
   ],
   depend_files : files('anv_extensions.py'),
@@ -111,6 +111,8 @@ endforeach
 
 libanv_files = files(
   'anv_allocator.c',
+  'anv_android_stubs.c',
+  'anv_android.h',
   'anv_batch_chain.c',
   'anv_blorp.c',
   'anv_cmd_buffer.c',
@@ -176,7 +178,10 @@ endif
 
 libanv_common = static_library(
   'anv_common',
-  [libanv_files, anv_entrypoints, anv_extensions_c, anv_extensions_h],
+  [
+    libanv_files, anv_entrypoints, anv_extensions_c, anv_extensions_h, sha1_h,
+    gen_xml_pack,
+  ],
   include_directories : [
     inc_common, inc_intel, inc_compiler, inc_drm_uapi, inc_vulkan_util,
     inc_vulkan_wsi,
@@ -198,7 +203,7 @@ libvulkan_intel = shared_library(
     libvulkan_util, libvulkan_wsi, libmesa_util,
   ],
   dependencies : [
-    dep_thread, dep_dl, dep_m, anv_deps, idep_nir,
+    dep_thread, dep_dl, dep_m, anv_deps, idep_nir, idep_genxml,
   ],
   c_args : anv_flags,
   link_args : ['-Wl,--build-id=sha1', ld_args_bsymbolic, ld_args_gc_sections],
@@ -225,18 +230,21 @@ if with_tests
   )
 
   foreach t : ['block_pool_no_free', 'state_pool_no_free',
-               'state_pool_free_list_only', 'state_pool']
+               'state_pool_free_list_only', 'state_pool',
+               'state_pool_padding']
     test(
       'anv_@0@'.format(t),
       executable(
         t,
         ['tests/@0@.c'.format(t), anv_entrypoints[0], anv_extensions_h],
+        c_args : [ c_sse2_args ],
         link_with : libvulkan_intel_test,
         dependencies : [dep_libdrm, dep_thread, dep_m, dep_valgrind],
         include_directories : [
           inc_common, inc_intel, inc_compiler, inc_vulkan_util, inc_vulkan_wsi,
         ],
-      )
+      ),
+      suite : ['intel'],
     )
   endforeach
 endif

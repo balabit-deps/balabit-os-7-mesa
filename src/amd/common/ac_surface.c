@@ -27,7 +27,7 @@
 
 #include "ac_surface.h"
 #include "amd_family.h"
-#include "addrlib/amdgpu_asic_addr.h"
+#include "addrlib/src/amdgpu_asic_addr.h"
 #include "ac_gpu_info.h"
 #include "util/macros.h"
 #include "util/u_atomic.h"
@@ -39,7 +39,7 @@
 #include <amdgpu.h>
 #include <amdgpu_drm.h>
 
-#include "addrlib/addrinterface.h"
+#include "addrlib/inc/addrinterface.h"
 
 #ifndef CIASICIDGFXENGINE_SOUTHERNISLAND
 #define CIASICIDGFXENGINE_SOUTHERNISLAND 0x0000000A
@@ -150,6 +150,10 @@ static void addrlib_family_rev_id(enum radeon_family family,
 	case CHIP_RAVEN:
 		*addrlib_family = FAMILY_RV;
 		*addrlib_revid = get_first(AMDGPU_RAVEN_RANGE);
+		break;
+	case CHIP_RAVEN2:
+		*addrlib_family = FAMILY_RV;
+		*addrlib_revid = get_first(AMDGPU_RAVEN2_RANGE);
 		break;
 	default:
 		fprintf(stderr, "amdgpu: Unknown family.\n");
@@ -1034,8 +1038,7 @@ static int gfx6_compute_surface(ADDR_HANDLE addrlib,
 static int
 gfx9_get_preferred_swizzle_mode(ADDR_HANDLE addrlib,
 				ADDR2_COMPUTE_SURFACE_INFO_INPUT *in,
-				bool is_fmask, unsigned flags,
-				AddrSwizzleMode *swizzle_mode)
+				bool is_fmask, AddrSwizzleMode *swizzle_mode)
 {
 	ADDR_E_RETURNCODE ret;
 	ADDR2_GET_PREFERRED_SURF_SETTING_INPUT sin = {0};
@@ -1059,16 +1062,6 @@ gfx9_get_preferred_swizzle_mode(ADDR_HANDLE addrlib,
 	sin.numMipLevels = in->numMipLevels;
 	sin.numSamples = in->numSamples;
 	sin.numFrags = in->numFrags;
-
-	if (flags & RADEON_SURF_SCANOUT) {
-		sin.preferredSwSet.sw_D = 1;
-		/* Raven only allows S for displayable surfaces with < 64 bpp, so
-		 * allow it as fallback */
-		sin.preferredSwSet.sw_S = 1;
-	} else if (in->flags.depth || in->flags.stencil || is_fmask)
-		sin.preferredSwSet.sw_Z = 1;
-	else
-		sin.preferredSwSet.sw_S = 1;
 
 	if (is_fmask) {
 		sin.flags.display = 0;
@@ -1269,8 +1262,7 @@ static int gfx9_compute_miptree(ADDR_HANDLE addrlib,
 			fout.size = sizeof(ADDR2_COMPUTE_FMASK_INFO_OUTPUT);
 
 			ret = gfx9_get_preferred_swizzle_mode(addrlib, in,
-							      true, surf->flags,
-							      &fin.swizzleMode);
+							      true, &fin.swizzleMode);
 			if (ret != ADDR_OK)
 				return ret;
 
@@ -1420,11 +1412,13 @@ static int gfx9_compute_surface(ADDR_HANDLE addrlib,
 		AddrSurfInfoIn.bpp = surf->bpe * 8;
 	}
 
-	AddrSurfInfoIn.flags.color = !(surf->flags & RADEON_SURF_Z_OR_SBUFFER);
+	bool is_color_surface = !(surf->flags & RADEON_SURF_Z_OR_SBUFFER);
+	AddrSurfInfoIn.flags.color = is_color_surface &&
+	                             !(surf->flags & RADEON_SURF_NO_RENDER_TARGET);
 	AddrSurfInfoIn.flags.depth = (surf->flags & RADEON_SURF_ZBUFFER) != 0;
 	AddrSurfInfoIn.flags.display = get_display_flag(config, surf);
 	/* flags.texture currently refers to TC-compatible HTILE */
-	AddrSurfInfoIn.flags.texture = AddrSurfInfoIn.flags.color ||
+	AddrSurfInfoIn.flags.texture = is_color_surface ||
 				       surf->flags & RADEON_SURF_TC_COMPATIBLE_HTILE;
 	AddrSurfInfoIn.flags.opt4space = 1;
 
@@ -1472,8 +1466,7 @@ static int gfx9_compute_surface(ADDR_HANDLE addrlib,
 		}
 
 		r = gfx9_get_preferred_swizzle_mode(addrlib, &AddrSurfInfoIn,
-						    false, surf->flags,
-						    &AddrSurfInfoIn.swizzleMode);
+						    false, &AddrSurfInfoIn.swizzleMode);
 		if (r)
 			return r;
 		break;
@@ -1509,8 +1502,7 @@ static int gfx9_compute_surface(ADDR_HANDLE addrlib,
 
 		if (!AddrSurfInfoIn.flags.depth) {
 			r = gfx9_get_preferred_swizzle_mode(addrlib, &AddrSurfInfoIn,
-							    false, surf->flags,
-							    &AddrSurfInfoIn.swizzleMode);
+							    false, &AddrSurfInfoIn.swizzleMode);
 			if (r)
 				return r;
 		} else
@@ -1526,10 +1518,12 @@ static int gfx9_compute_surface(ADDR_HANDLE addrlib,
 
 	/* Query whether the surface is displayable. */
 	bool displayable = false;
-	r = Addr2IsValidDisplaySwizzleMode(addrlib, surf->u.gfx9.surf.swizzle_mode,
+	if (!config->is_3d && !config->is_cube) {
+		r = Addr2IsValidDisplaySwizzleMode(addrlib, surf->u.gfx9.surf.swizzle_mode,
 					   surf->bpe * 8, &displayable);
-	if (r)
-		return r;
+		if (r)
+			return r;
+	}
 	surf->is_displayable = displayable;
 
 	switch (surf->u.gfx9.surf.swizzle_mode) {
@@ -1589,10 +1583,6 @@ static int gfx9_compute_surface(ADDR_HANDLE addrlib,
 		default:
 			assert(0);
 	}
-
-	/* Temporary workaround to prevent VM faults and hangs. */
-	if (info->family == CHIP_VEGA12)
-		surf->fmask_size *= 8;
 
 	return 0;
 }

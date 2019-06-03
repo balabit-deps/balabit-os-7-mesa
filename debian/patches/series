@@ -1,7 +1,13 @@
 07_gallium-fix-build-failure-on-powerpcspe.diff
 
+# meson fixes
+fix-hurd-ftbfs.diff
+util-define-path-max.diff
+meson-fix-with-dri2-def-for-hurd.diff
 
 # Ubuntu patches.
 dont-enable-10bpc-by-default.diff
 disable-intel-ccs-compression.diff
-i965-revert-enabling-softpin.diff
+revert-set-full-thread-affinity.diff
+i965-comet-lake.diff
+radeon-rework-gfx9-scissor-workaround.diff

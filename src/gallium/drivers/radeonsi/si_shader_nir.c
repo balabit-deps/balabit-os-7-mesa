@@ -143,16 +143,39 @@ static void scan_instruction(struct tgsi_shader_info *info,
 		case nir_intrinsic_load_tess_level_outer:
 			info->reads_tess_factors = true;
 			break;
-		case nir_intrinsic_image_deref_load:
+		case nir_intrinsic_image_deref_load: {
+			nir_variable *var = intrinsic_get_var(intr);
+			if (var->data.bindless) {
+				info->uses_bindless_images = true;
+
+				if (glsl_get_sampler_dim(var->type) == GLSL_SAMPLER_DIM_BUF)
+					info->uses_bindless_buffer_load = true;
+				else
+					info->uses_bindless_image_load = true;
+			}
+			break;
+		}
 		case nir_intrinsic_image_deref_size:
 		case nir_intrinsic_image_deref_samples: {
 			nir_variable *var = intrinsic_get_var(intr);
 			if (var->data.bindless)
 				info->uses_bindless_images = true;
-
 			break;
 		}
-		case nir_intrinsic_image_deref_store:
+		case nir_intrinsic_image_deref_store: {
+			const nir_deref_instr *image_deref = nir_instr_as_deref(intr->src[0].ssa->parent_instr);
+			nir_variable *var = intrinsic_get_var(intr);
+			if (var->data.bindless) {
+				info->uses_bindless_images = true;
+
+				if (glsl_get_sampler_dim(image_deref->type) == GLSL_SAMPLER_DIM_BUF)
+					info->uses_bindless_buffer_store = true;
+				else
+					info->uses_bindless_image_store = true;
+			}
+			info->writes_memory = true;
+			break;
+		}
 		case nir_intrinsic_image_deref_atomic_add:
 		case nir_intrinsic_image_deref_atomic_min:
 		case nir_intrinsic_image_deref_atomic_max:
@@ -162,10 +185,16 @@ static void scan_instruction(struct tgsi_shader_info *info,
 		case nir_intrinsic_image_deref_atomic_exchange:
 		case nir_intrinsic_image_deref_atomic_comp_swap: {
 			nir_variable *var = intrinsic_get_var(intr);
-			if (var->data.bindless)
+			if (var->data.bindless) {
 				info->uses_bindless_images = true;
 
-			/* fall-through */
+				if (glsl_get_sampler_dim(var->type) == GLSL_SAMPLER_DIM_BUF)
+					info->uses_bindless_buffer_atomic = true;
+				else
+					info->uses_bindless_image_atomic = true;
+			}
+			info->writes_memory = true;
+			break;
 		}
 		case nir_intrinsic_store_ssbo:
 		case nir_intrinsic_ssbo_atomic_add:
@@ -250,7 +279,6 @@ static void scan_instruction(struct tgsi_shader_info *info,
 }
 
 void si_nir_scan_tess_ctrl(const struct nir_shader *nir,
-			   const struct tgsi_shader_info *info,
 			   struct tgsi_tessctrl_info *out)
 {
 	memset(out, 0, sizeof(*out));
@@ -258,14 +286,8 @@ void si_nir_scan_tess_ctrl(const struct nir_shader *nir,
 	if (nir->info.stage != MESA_SHADER_TESS_CTRL)
 		return;
 
-	/* Initial value = true. Here the pass will accumulate results from
-	 * multiple segments surrounded by barriers. If tess factors aren't
-	 * written at all, it's a shader bug and we don't care if this will be
-	 * true.
-	 */
-	out->tessfactors_are_def_in_all_invocs = true;
-
-	/* TODO: Implement scanning of tess factors, see tgsi backend. */
+	out->tessfactors_are_def_in_all_invocs =
+		ac_are_tessfactors_def_in_all_invocs(nir);
 }
 
 void si_nir_scan_shader(const struct nir_shader *nir,
@@ -340,7 +362,7 @@ void si_nir_scan_shader(const struct nir_shader *nir,
 		}
 	}
 
-	if (nir->info.stage == MESA_SHADER_COMPUTE) {
+	if (gl_shader_stage_is_compute(nir->info.stage)) {
 		info->properties[TGSI_PROPERTY_CS_FIXED_BLOCK_WIDTH] = nir->info.cs.local_size[0];
 		info->properties[TGSI_PROPERTY_CS_FIXED_BLOCK_HEIGHT] = nir->info.cs.local_size[1];
 		info->properties[TGSI_PROPERTY_CS_FIXED_BLOCK_DEPTH] = nir->info.cs.local_size[2];
@@ -654,7 +676,8 @@ void si_nir_scan_shader(const struct nir_shader *nir,
 		 * so we don't need to worry about the ordering.
 		 */
 		if (variable->interface_type != NULL) {
-			if (variable->data.mode == nir_var_uniform) {
+			if (variable->data.mode == nir_var_uniform ||
+			    variable->data.mode == nir_var_mem_ubo) {
 
 				unsigned block_count;
 				if (base_type != GLSL_TYPE_INTERFACE) {
@@ -678,7 +701,7 @@ void si_nir_scan_shader(const struct nir_shader *nir,
 				_mesa_set_add(ubo_set, variable->interface_type);
 			}
 
-			if (variable->data.mode == nir_var_shader_storage) {
+			if (variable->data.mode == nir_var_mem_ssbo) {
 				/* TODO: make this more accurate */
 				info->shader_buffers_declared =
 					u_bit_consecutive(0, SI_NUM_SHADER_BUFFERS);
@@ -748,13 +771,6 @@ void si_nir_scan_shader(const struct nir_shader *nir,
 void
 si_lower_nir(struct si_shader_selector* sel)
 {
-	/* Disable const buffer fast path for old LLVM versions */
-	if (sel->screen->info.chip_class == SI && HAVE_LLVM < 0x0600 &&
-	    sel->info.const_buffers_declared == 1 &&
-	    sel->info.shader_buffers_declared == 0) {
-		sel->info.const_buffers_declared |= 0x2;
-	}
-
 	/* Adjust the driver location of inputs and outputs. The state tracker
 	 * interprets them as slots, while the ac/nir backend interprets them
 	 * as individual components.
@@ -802,8 +818,6 @@ si_lower_nir(struct si_shader_selector* sel)
 
 	ac_lower_indirect_derefs(sel->nir, sel->screen->info.chip_class);
 
-	NIR_PASS_V(sel->nir, nir_lower_load_const_to_scalar);
-
 	bool progress;
 	do {
 		progress = false;
@@ -820,7 +834,7 @@ si_lower_nir(struct si_shader_selector* sel)
 		NIR_PASS(progress, sel->nir, nir_opt_if);
 		NIR_PASS(progress, sel->nir, nir_opt_dead_cf);
 		NIR_PASS(progress, sel->nir, nir_opt_cse);
-		NIR_PASS(progress, sel->nir, nir_opt_peephole_select, 8);
+		NIR_PASS(progress, sel->nir, nir_opt_peephole_select, 8, true);
 
 		/* Needed for algebraic lowering */
 		NIR_PASS(progress, sel->nir, nir_opt_algebraic);
@@ -832,6 +846,8 @@ si_lower_nir(struct si_shader_selector* sel)
 			NIR_PASS(progress, sel->nir, nir_opt_loop_unroll, 0);
 		}
 	} while (progress);
+
+	NIR_PASS_V(sel->nir, nir_lower_bool_to_int32);
 }
 
 static void declare_nir_input_vs(struct si_shader_context *ctx,
@@ -904,40 +920,76 @@ si_nir_load_sampler_desc(struct ac_shader_abi *abi,
 			 bool write, bool bindless)
 {
 	struct si_shader_context *ctx = si_shader_context_from_abi(abi);
+	const struct tgsi_shader_info *info = &ctx->shader->selector->info;
 	LLVMBuilderRef builder = ctx->ac.builder;
-	LLVMValueRef list = LLVMGetParam(ctx->main_fn, ctx->param_samplers_and_images);
-	LLVMValueRef index;
+	unsigned const_index = base_index + constant_index;
+	bool dcc_off = write;
+
+	/* TODO: images_store and images_atomic are not set */
+	if (!dynamic_index && image &&
+	    (info->images_store | info->images_atomic) & (1 << const_index))
+		dcc_off = true;
 
 	assert(!descriptor_set);
+	assert(!image || desc_type == AC_DESC_IMAGE || desc_type == AC_DESC_BUFFER);
 
-	dynamic_index = dynamic_index ? dynamic_index : ctx->ac.i32_0;
-	index = LLVMBuildAdd(builder, dynamic_index,
-			     LLVMConstInt(ctx->ac.i32, base_index + constant_index, false),
-			     "");
+	if (bindless) {
+		LLVMValueRef list =
+			LLVMGetParam(ctx->main_fn, ctx->param_bindless_samplers_and_images);
+
+		/* dynamic_index is the bindless handle */
+		if (image) {
+			/* For simplicity, bindless image descriptors use fixed
+			 * 16-dword slots for now.
+			 */
+			dynamic_index = LLVMBuildMul(ctx->ac.builder, dynamic_index,
+					     LLVMConstInt(ctx->i32, 2, 0), "");
+
+			return si_load_image_desc(ctx, list, dynamic_index, desc_type,
+						  dcc_off, true);
+		}
+
+		/* Since bindless handle arithmetic can contain an unsigned integer
+		 * wraparound and si_load_sampler_desc assumes there isn't any,
+		 * use GEP without "inbounds" (inside ac_build_pointer_add)
+		 * to prevent incorrect code generation and hangs.
+		 */
+		dynamic_index = LLVMBuildMul(ctx->ac.builder, dynamic_index,
+					     LLVMConstInt(ctx->i32, 2, 0), "");
+		list = ac_build_pointer_add(&ctx->ac, list, dynamic_index);
+		return si_load_sampler_desc(ctx, list, ctx->i32_0, desc_type);
+	}
+
+	unsigned num_slots = image ? ctx->num_images : ctx->num_samplers;
+	assert(const_index < num_slots);
+
+	LLVMValueRef list = LLVMGetParam(ctx->main_fn, ctx->param_samplers_and_images);
+	LLVMValueRef index = LLVMConstInt(ctx->ac.i32, const_index, false);
+
+	if (dynamic_index) {
+		index = LLVMBuildAdd(builder, index, dynamic_index, "");
+
+		/* From the GL_ARB_shader_image_load_store extension spec:
+		 *
+		 *    If a shader performs an image load, store, or atomic
+		 *    operation using an image variable declared as an array,
+		 *    and if the index used to select an individual element is
+		 *    negative or greater than or equal to the size of the
+		 *    array, the results of the operation are undefined but may
+		 *    not lead to termination.
+		 */
+		index = si_llvm_bound_index(ctx, index, num_slots);
+	}
 
 	if (image) {
-		assert(desc_type == AC_DESC_IMAGE || desc_type == AC_DESC_BUFFER);
-		assert(base_index + constant_index < ctx->num_images);
-
-		if (dynamic_index)
-			index = si_llvm_bound_index(ctx, index, ctx->num_images);
-
 		index = LLVMBuildSub(ctx->ac.builder,
 				     LLVMConstInt(ctx->i32, SI_NUM_IMAGES - 1, 0),
 				     index, "");
-
-		/* TODO: be smarter about when we use dcc_off */
-		return si_load_image_desc(ctx, list, index, desc_type, write);
+		return si_load_image_desc(ctx, list, index, desc_type, dcc_off, false);
 	}
-
-	assert(base_index + constant_index < ctx->num_samplers);
-
-	if (dynamic_index)
-		index = si_llvm_bound_index(ctx, index, ctx->num_samplers);
 
 	index = LLVMBuildAdd(ctx->ac.builder, index,
 			     LLVMConstInt(ctx->i32, SI_NUM_IMAGES / 2, 0), "");
-
 	return si_load_sampler_desc(ctx, list, index, desc_type);
 }
 
@@ -965,6 +1017,9 @@ bool si_nir_build_llvm(struct si_shader_context *ctx, struct nir_shader *nir)
 
 			LLVMValueRef data[4];
 			unsigned loc = variable->data.location;
+
+			if (loc >= VARYING_SLOT_VAR0 && nir->info.stage == MESA_SHADER_FRAGMENT)
+				ctx->abi.fs_input_attr_indices[loc - VARYING_SLOT_VAR0] = input_idx / 4;
 
 			for (unsigned i = 0; i < attrib_count; i++) {
 				/* Packed components share the same location so skip
@@ -1002,7 +1057,7 @@ bool si_nir_build_llvm(struct si_shader_context *ctx, struct nir_shader *nir)
 	ctx->num_images = util_last_bit(info->images_declared);
 
 	if (ctx->shader->selector->info.properties[TGSI_PROPERTY_CS_LOCAL_SIZE]) {
-		assert(nir->info.stage == MESA_SHADER_COMPUTE);
+		assert(gl_shader_stage_is_compute(nir->info.stage));
 		si_declare_compute_memory(ctx);
 	}
 	ac_nir_translate(&ctx->ac, &ctx->abi, nir);

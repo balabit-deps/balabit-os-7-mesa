@@ -49,9 +49,7 @@ class dead_variable_visitor : public ir_hierarchical_visitor {
 public:
    dead_variable_visitor()
    {
-      variables = _mesa_set_create(NULL,
-                                   _mesa_hash_pointer,
-                                   _mesa_key_pointer_equal);
+      variables = _mesa_pointer_set_create(NULL);
    }
 
    virtual ~dead_variable_visitor()
@@ -87,8 +85,6 @@ public:
 
    void remove_dead_variables()
    {
-      struct set_entry *entry;
-
       set_foreach(variables, entry) {
          ir_variable *ir = (ir_variable *) entry->key;
 

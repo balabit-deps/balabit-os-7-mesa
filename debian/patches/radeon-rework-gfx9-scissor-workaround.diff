@@ -1,0 +1,369 @@
+commit 1a3478dc56a23f545bde85add944cf3a22a1d665
+Author: Marek Olšák <marek.olsak@amd.com>
+Date:   Thu Apr 18 15:19:19 2019 -0400
+
+    radeonsi/gfx9: rework the gfx9 scissor bug workaround (v2)
+    
+    Needed to track context rolls caused by streamout and ACQUIRE_MEM.
+    ACQUIRE_MEM can occur outside of draw calls.
+    
+    Bugzilla: https://bugs.freedesktop.org/show_bug.cgi?id=110355
+    
+    v2: squashed patches and done more rework
+    
+    Cc: 19.0 <mesa-stable@lists.freedesktop.org>
+    (cherry picked from commit 440135e5a0d178c537db3f96e6823bc8220a0f3f)
+    Conflicts resolved by Dylan
+
+--- a/src/gallium/drivers/radeonsi/si_pipe.c
++++ b/src/gallium/drivers/radeonsi/si_pipe.c
+@@ -1014,6 +1014,8 @@ struct pipe_screen *radeonsi_screen_crea
+ 		driQueryOptionb(config->options, "radeonsi_commutative_blend_add");
+ 	sscreen->clear_db_cache_before_clear =
+ 		driQueryOptionb(config->options, "radeonsi_clear_db_cache_before_clear");
++	sscreen->has_gfx9_scissor_bug = sscreen->info.family == CHIP_VEGA10 ||
++		                                         sscreen->info.family == CHIP_RAVEN;
+ 	sscreen->has_msaa_sample_loc_bug = (sscreen->info.family >= CHIP_POLARIS10 &&
+ 					    sscreen->info.family <= CHIP_POLARIS12) ||
+ 					   sscreen->info.family == CHIP_VEGA10 ||
+--- a/src/gallium/drivers/radeonsi/si_pipe.h
++++ b/src/gallium/drivers/radeonsi/si_pipe.h
+@@ -446,6 +446,7 @@ struct si_screen {
+ 	bool				assume_no_z_fights;
+ 	bool				commutative_blend_add;
+ 	bool				clear_db_cache_before_clear;
++	bool                          has_gfx9_scissor_bug;
+ 	bool				has_msaa_sample_loc_bug;
+ 	bool				has_ls_vgpr_init_bug;
+ 	bool				has_dcc_constant_encode;
+@@ -1054,7 +1055,7 @@ struct si_context {
+ 	unsigned			num_resident_handles;
+ 	uint64_t			num_alloc_tex_transfer_bytes;
+ 	unsigned			last_tex_ps_draw_ratio; /* for query */
+-	unsigned			context_roll_counter;
++	unsigned			context_roll;
+ 
+ 	/* Queries. */
+ 	/* Maintain the list of active queries for pausing between IBs. */
+--- a/src/gallium/drivers/radeonsi/si_state.c
++++ b/src/gallium/drivers/radeonsi/si_state.c
+@@ -256,7 +256,7 @@ static void si_emit_cb_render_state(stru
+ 					    sx_blend_opt_control);
+ 	}
+ 	if (initial_cdw != cs->current.cdw)
+-		sctx->context_roll_counter++;
++		sctx->context_roll = true;
+ }
+ 
+ /*
+@@ -792,7 +792,7 @@ static void si_emit_clip_regs(struct si_
+ 		S_028810_CLIP_DISABLE(window_space));
+ 
+ 	if (initial_cdw != sctx->gfx_cs->current.cdw)
+-		sctx->context_roll_counter++;
++		sctx->context_roll = true;
+ }
+ 
+ /*
+@@ -1446,7 +1446,7 @@ static void si_emit_db_render_state(stru
+ 				   SI_TRACKED_DB_SHADER_CONTROL, db_shader_control);
+ 
+ 	if (initial_cdw != sctx->gfx_cs->current.cdw)
+-		sctx->context_roll_counter++;
++		sctx->context_roll = true;
+ }
+ 
+ /*
+@@ -3527,7 +3527,7 @@ static void si_emit_msaa_config(struct s
+ 				   SI_TRACKED_PA_SC_MODE_CNTL_1, sc_mode_cntl_1);
+ 
+ 	if (initial_cdw != cs->current.cdw) {
+-		sctx->context_roll_counter++;
++		sctx->context_roll = true;
+ 
+ 		/* GFX9: Flush DFSM when the AA mode changes. */
+ 		if (sctx->screen->dfsm_allowed) {
+--- a/src/gallium/drivers/radeonsi/si_state_binning.c
++++ b/src/gallium/drivers/radeonsi/si_state_binning.c
+@@ -321,7 +321,7 @@ static void si_emit_dpbb_disable(struct
+ 				   S_028060_PUNCHOUT_MODE(V_028060_FORCE_OFF) |
+ 				   S_028060_POPS_DRAIN_PS_ON_OVERLAP(1));
+ 	if (initial_cdw != sctx->gfx_cs->current.cdw)
+-		sctx->context_roll_counter++;
++		sctx->context_roll = true;
+ }
+ 
+ void si_emit_dpbb_state(struct si_context *sctx)
+@@ -443,5 +443,5 @@ void si_emit_dpbb_state(struct si_contex
+ 				   S_028060_PUNCHOUT_MODE(punchout_mode) |
+ 				   S_028060_POPS_DRAIN_PS_ON_OVERLAP(1));
+ 	if (initial_cdw != sctx->gfx_cs->current.cdw)
+-		sctx->context_roll_counter++;
++		sctx->context_roll = true;
+ }
+--- a/src/gallium/drivers/radeonsi/si_state_draw.c
++++ b/src/gallium/drivers/radeonsi/si_state_draw.c
+@@ -66,7 +66,7 @@ static unsigned si_conv_pipe_prim(unsign
+  * The information about LDS and other non-compile-time parameters is then
+  * written to userdata SGPRs.
+  */
+-static bool si_emit_derived_tess_state(struct si_context *sctx,
++static void si_emit_derived_tess_state(struct si_context *sctx,
+ 				       const struct pipe_draw_info *info,
+ 				       unsigned *num_patches)
+ {
+@@ -110,7 +110,7 @@ static bool si_emit_derived_tess_state(s
+ 	    (!has_primid_instancing_bug ||
+ 	     (sctx->last_tess_uses_primid == tess_uses_primid))) {
+ 		*num_patches = sctx->last_num_patches;
+-		return false;
++		return;
+ 	}
+ 
+ 	sctx->last_ls = ls_current;
+@@ -305,9 +305,8 @@ static bool si_emit_derived_tess_state(s
+ 					       ls_hs_config);
+ 		}
+ 		sctx->last_ls_hs_config = ls_hs_config;
+-		return true; /* true if the context rolls */
++		sctx->context_roll = true;
+ 	}
+-	return false;
+ }
+ 
+ static unsigned si_num_prims_for_vertices(const struct pipe_draw_info *info)
+@@ -541,7 +540,7 @@ static unsigned si_get_ia_multi_vgt_para
+ }
+ 
+ /* rast_prim is the primitive type after GS. */
+-static bool si_emit_rasterizer_prim_state(struct si_context *sctx)
++static void si_emit_rasterizer_prim_state(struct si_context *sctx)
+ {
+ 	struct radeon_cmdbuf *cs = sctx->gfx_cs;
+ 	enum pipe_prim_type rast_prim = sctx->current_rast_prim;
+@@ -549,11 +548,11 @@ static bool si_emit_rasterizer_prim_stat
+ 
+ 	/* Skip this if not rendering lines. */
+ 	if (!util_prim_is_lines(rast_prim))
+-		return false;
++		return;
+ 
+ 	if (rast_prim == sctx->last_rast_prim &&
+ 	    rs->pa_sc_line_stipple == sctx->last_sc_line_stipple)
+-		return false;
++		return;
+ 
+ 	/* For lines, reset the stipple pattern at each primitive. Otherwise,
+ 	 * reset the stipple pattern at each packet (line strips, line loops).
+@@ -564,7 +563,7 @@ static bool si_emit_rasterizer_prim_stat
+ 
+ 	sctx->last_rast_prim = rast_prim;
+ 	sctx->last_sc_line_stipple = rs->pa_sc_line_stipple;
+-	return true; /* true if the context rolls */
++	sctx->context_roll = true;
+ }
+ 
+ static void si_emit_vs_state(struct si_context *sctx,
+@@ -659,6 +658,7 @@ static void si_emit_draw_registers(struc
+ 		radeon_set_context_reg(cs, R_02840C_VGT_MULTI_PRIM_IB_RESET_INDX,
+ 				       info->restart_index);
+ 		sctx->last_restart_index = info->restart_index;
++		sctx->context_roll = true;
+ 	}
+ }
+ 
+@@ -896,6 +896,10 @@ static void si_emit_surface_sync(struct
+ 		radeon_emit(cs, 0);               /* CP_COHER_BASE */
+ 		radeon_emit(cs, 0x0000000A);      /* POLL_INTERVAL */
+ 	}
++
++	/* ACQUIRE_MEM has an implicit context roll if the current context
++	 * is busy. */
++	sctx->context_roll = true;
+ }
+ 
+ void si_emit_cache_flush(struct si_context *sctx)
+@@ -1210,26 +1214,10 @@ static void si_emit_all_states(struct si
+ 			       unsigned skip_atom_mask)
+ {
+ 	unsigned num_patches = 0;
+-	/* Vega10/Raven scissor bug workaround. When any context register is
+-	 * written (i.e. the GPU rolls the context), PA_SC_VPORT_SCISSOR
+-	 * registers must be written too.
+-	 */
+-	bool handle_scissor_bug = (sctx->family == CHIP_VEGA10 || sctx->family == CHIP_RAVEN) &&
+-				  !si_is_atom_dirty(sctx, &sctx->atoms.s.scissors);
+-	bool context_roll = false; /* set correctly for GFX9 only */
+ 
+-	context_roll |= si_emit_rasterizer_prim_state(sctx);
++	si_emit_rasterizer_prim_state(sctx);
+ 	if (sctx->tes_shader.cso)
+-		context_roll |= si_emit_derived_tess_state(sctx, info, &num_patches);
+-
+-	if (handle_scissor_bug &&
+-	    (info->count_from_stream_output ||
+-	     sctx->dirty_atoms & si_atoms_that_always_roll_context() ||
+-	     sctx->dirty_states & si_states_that_always_roll_context() ||
+-	     si_prim_restart_index_changed(sctx, info)))
+-		context_roll = true;
+-
+-	sctx->context_roll_counter = 0;
++		si_emit_derived_tess_state(sctx, info, &num_patches);
+ 
+ 	/* Emit state atoms. */
+ 	unsigned mask = sctx->dirty_atoms & ~skip_atom_mask;
+@@ -1252,12 +1240,6 @@ static void si_emit_all_states(struct si
+ 	}
+ 	sctx->dirty_states = 0;
+ 
+-	if (handle_scissor_bug &&
+-	    (context_roll || sctx->context_roll_counter)) {
+-		sctx->scissors.dirty_mask = (1 << SI_MAX_VIEWPORTS) - 1;
+-		sctx->atoms.s.scissors.emit(sctx);
+-	}
+-
+ 	/* Emit draw states. */
+ 	si_emit_vs_state(sctx, info);
+ 	si_emit_draw_registers(sctx, info, num_patches);
+@@ -1456,6 +1438,22 @@ static void si_draw_vbo(struct pipe_cont
+ 	if (!si_upload_vertex_buffer_descriptors(sctx))
+ 		return;
+ 
++	/* Vega10/Raven scissor bug workaround. When any context register is
++	 * written (i.e. the GPU rolls the context), PA_SC_VPORT_SCISSOR
++	 * registers must be written too.
++	 */
++	bool has_gfx9_scissor_bug = sctx->screen->has_gfx9_scissor_bug;
++	unsigned masked_atoms = 0;
++
++	if (has_gfx9_scissor_bug) {
++		masked_atoms |= si_get_atom_bit(sctx, &sctx->atoms.s.scissors);
++
++		if (info->count_from_stream_output ||
++		    sctx->dirty_atoms & si_atoms_that_always_roll_context() ||
++		    sctx->dirty_states & si_states_that_always_roll_context())
++			sctx->context_roll = true;
++	}
++
+ 	/* Use optimal packet order based on whether we need to sync the pipeline. */
+ 	if (unlikely(sctx->flags & (SI_CONTEXT_FLUSH_AND_INV_CB |
+ 				      SI_CONTEXT_FLUSH_AND_INV_DB |
+@@ -1466,8 +1464,6 @@ static void si_draw_vbo(struct pipe_cont
+ 		 * Then draw and prefetch at the end. This ensures that the time
+ 		 * the CUs are idle is very short.
+ 		 */
+-		unsigned masked_atoms = 0;
+-
+ 		if (unlikely(sctx->flags & SI_CONTEXT_FLUSH_FOR_RENDER_COND))
+ 			masked_atoms |= si_get_atom_bit(sctx, &sctx->atoms.s.render_cond);
+ 
+@@ -1481,6 +1477,13 @@ static void si_draw_vbo(struct pipe_cont
+ 
+ 		if (si_is_atom_dirty(sctx, &sctx->atoms.s.render_cond))
+ 			sctx->atoms.s.render_cond.emit(sctx);
++
++		if (has_gfx9_scissor_bug &&
++		    (sctx->context_roll ||
++		     si_is_atom_dirty(sctx, &sctx->atoms.s.scissors))) {
++			sctx->scissors.dirty_mask = (1 << SI_MAX_VIEWPORTS) - 1;
++			sctx->atoms.s.scissors.emit(sctx);
++		}
+ 		sctx->dirty_atoms = 0;
+ 
+ 		si_emit_draw_packets(sctx, info, indexbuf, index_size, index_offset);
+@@ -1505,7 +1508,16 @@ static void si_draw_vbo(struct pipe_cont
+ 		if (!si_upload_graphics_shader_descriptors(sctx))
+ 			return;
+ 
+-		si_emit_all_states(sctx, info, 0);
++		si_emit_all_states(sctx, info, masked_atoms);
++
++		if (has_gfx9_scissor_bug &&
++		    (sctx->context_roll ||
++		     si_is_atom_dirty(sctx, &sctx->atoms.s.scissors))) {
++			sctx->scissors.dirty_mask = (1 << SI_MAX_VIEWPORTS) - 1;
++			sctx->atoms.s.scissors.emit(sctx);
++		}
++		sctx->dirty_atoms = 0;
++
+ 		si_emit_draw_packets(sctx, info, indexbuf, index_size, index_offset);
+ 
+ 		/* Prefetch the remaining shaders after the draw has been
+@@ -1514,6 +1526,9 @@ static void si_draw_vbo(struct pipe_cont
+ 			cik_emit_prefetch_L2(sctx, false);
+ 	}
+ 
++	/* Clear the context roll flag after the draw call. */
++	sctx->context_roll = false;
++
+ 	if (unlikely(sctx->current_saved_cs)) {
+ 		si_trace_emit(sctx);
+ 		si_log_draw_state(sctx, sctx->log);
+--- a/src/gallium/drivers/radeonsi/si_state_shaders.c
++++ b/src/gallium/drivers/radeonsi/si_state_shaders.c
+@@ -576,7 +576,7 @@ static void si_emit_shader_es(struct si_
+ 					   shader->vgt_vertex_reuse_block_cntl);
+ 
+ 	if (initial_cdw != sctx->gfx_cs->current.cdw)
+-		sctx->context_roll_counter++;
++		sctx->context_roll = true;
+ }
+ 
+ static void si_shader_es(struct si_screen *sscreen, struct si_shader *shader)
+@@ -825,7 +825,7 @@ static void si_emit_shader_gs(struct si_
+ 	}
+ 
+ 	if (initial_cdw != sctx->gfx_cs->current.cdw)
+-		sctx->context_roll_counter++;
++		sctx->context_roll = true;
+ }
+ 
+ static void si_shader_gs(struct si_screen *sscreen, struct si_shader *shader)
+@@ -1002,7 +1002,7 @@ static void si_emit_shader_vs(struct si_
+ 					   shader->vgt_vertex_reuse_block_cntl);
+ 
+ 	if (initial_cdw != sctx->gfx_cs->current.cdw)
+-		sctx->context_roll_counter++;
++		sctx->context_roll = true;
+ }
+ 
+ /**
+@@ -1194,7 +1194,7 @@ static void si_emit_shader_ps(struct si_
+ 				   shader->ctx_reg.ps.cb_shader_mask);
+ 
+ 	if (initial_cdw != sctx->gfx_cs->current.cdw)
+-		sctx->context_roll_counter++;
++		sctx->context_roll = true;
+ }
+ 
+ static void si_shader_ps(struct si_shader *shader)
+@@ -2869,7 +2869,7 @@ static void si_emit_spi_map(struct si_co
+ 				    sctx->tracked_regs.spi_ps_input_cntl, num_interp);
+ 
+ 	if (initial_cdw != sctx->gfx_cs->current.cdw)
+-		sctx->context_roll_counter++;
++		sctx->context_roll = true;
+ }
+ 
+ /**
+--- a/src/gallium/drivers/radeonsi/si_state_streamout.c
++++ b/src/gallium/drivers/radeonsi/si_state_streamout.c
+@@ -303,6 +303,7 @@ void si_emit_streamout_end(struct si_con
+ 		 * buffer bound. This ensures that the primitives-emitted query
+ 		 * won't increment. */
+ 		radeon_set_context_reg(cs, R_028AD0_VGT_STRMOUT_BUFFER_SIZE_0 + 16*i, 0);
++		sctx->context_roll = true;
+ 
+ 		t[i]->buf_filled_size_valid = true;
+ 	}
+--- a/src/gallium/drivers/radeonsi/si_state_viewport.c
++++ b/src/gallium/drivers/radeonsi/si_state_viewport.c
+@@ -283,7 +283,7 @@ static void si_emit_guardband(struct si_
+ 				   S_028BE4_QUANT_MODE(V_028BE4_X_16_8_FIXED_POINT_1_256TH +
+ 						       vp_as_scissor.quant_mode));
+ 	if (initial_cdw != ctx->gfx_cs->current.cdw)
+-		ctx->context_roll_counter++;
++		ctx->context_roll = true;
+ }
+ 
+ static void si_emit_scissors(struct si_context *ctx)

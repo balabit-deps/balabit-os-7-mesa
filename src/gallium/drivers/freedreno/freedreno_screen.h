@@ -1,5 +1,3 @@
-/* -*- mode: C; c-file-style: "k&r"; tab-width 4; indent-tabs-mode: t; -*- */
-
 /*
  * Copyright (C) 2012 Rob Clark <robclark@freedesktop.org>
  *
@@ -29,13 +27,14 @@
 #ifndef FREEDRENO_SCREEN_H_
 #define FREEDRENO_SCREEN_H_
 
-#include <freedreno_drmif.h>
-#include <freedreno_ringbuffer.h>
+#include "drm/freedreno_drmif.h"
+#include "drm/freedreno_ringbuffer.h"
 
 #include "pipe/p_screen.h"
 #include "util/u_memory.h"
 #include "util/slab.h"
 #include "os/os_thread.h"
+#include "renderonly/renderonly.h"
 
 #include "freedreno_batch_cache.h"
 #include "freedreno_perfcntr.h"
@@ -89,6 +88,7 @@ struct fd_screen {
 	 */
 	struct fd_pipe *pipe;
 
+	uint32_t (*fill_ubwc_buffer_sizes)(struct fd_resource *rsc);
 	uint32_t (*setup_slices)(struct fd_resource *rsc);
 	unsigned (*tile_mode)(const struct pipe_resource *prsc);
 
@@ -97,6 +97,13 @@ struct fd_screen {
 	struct fd_batch_cache batch_cache;
 
 	bool reorder;
+
+	uint16_t rsc_seqno;
+
+	unsigned num_supported_modifiers;
+	const uint64_t *supported_modifiers;
+
+	struct renderonly *ro;
 };
 
 static inline struct fd_screen *
@@ -107,17 +114,25 @@ fd_screen(struct pipe_screen *pscreen)
 
 boolean fd_screen_bo_get_handle(struct pipe_screen *pscreen,
 		struct fd_bo *bo,
+		struct renderonly_scanout *scanout,
 		unsigned stride,
 		struct winsys_handle *whandle);
 struct fd_bo * fd_screen_bo_from_handle(struct pipe_screen *pscreen,
 		struct winsys_handle *whandle);
 
-struct pipe_screen * fd_screen_create(struct fd_device *dev);
+struct pipe_screen *
+fd_screen_create(struct fd_device *dev, struct renderonly *ro);
 
 static inline boolean
 is_a20x(struct fd_screen *screen)
 {
 	return (screen->gpu_id >= 200) && (screen->gpu_id < 210);
+}
+
+static inline boolean
+is_a2xx(struct fd_screen *screen)
+{
+	return (screen->gpu_id >= 200) && (screen->gpu_id < 300);
 }
 
 /* is a3xx patch revision 0? */
@@ -146,11 +161,17 @@ is_a5xx(struct fd_screen *screen)
 	return (screen->gpu_id >= 500) && (screen->gpu_id < 600);
 }
 
+static inline boolean
+is_a6xx(struct fd_screen *screen)
+{
+	return (screen->gpu_id >= 600) && (screen->gpu_id < 700);
+}
+
 /* is it using the ir3 compiler (shader isa introduced with a3xx)? */
 static inline boolean
 is_ir3(struct fd_screen *screen)
 {
-	return is_a3xx(screen) || is_a4xx(screen) || is_a5xx(screen);
+	return is_a3xx(screen) || is_a4xx(screen) || is_a5xx(screen) || is_a6xx(screen);
 }
 
 static inline bool

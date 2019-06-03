@@ -27,6 +27,7 @@ from __future__ import print_function
 
 from collections import OrderedDict
 import nir_algebraic
+from nir_opcodes import type_sizes
 import itertools
 
 # Convenience variables
@@ -60,10 +61,10 @@ d = 'd'
 #
 # All expression types can have a bit-size specified.  For opcodes, this
 # looks like "op@32", for variables it is "a@32" or "a@uint32" to specify a
-# type and size, and for literals, you can write "2.0@32".  In the search half
-# of the expression this indicates that it should only match that particular
-# bit-size.  In the replace half of the expression this indicates that the
-# constructed value should have that bit-size.
+# type and size.  In the search half of the expression this indicates that it
+# should only match that particular bit-size.  In the replace half of the
+# expression this indicates that the constructed value should have that
+# bit-size.
 
 optimizations = [
 
@@ -82,9 +83,11 @@ optimizations = [
    (('ineg', ('ineg', a)), a),
    (('fabs', ('fabs', a)), ('fabs', a)),
    (('fabs', ('fneg', a)), ('fabs', a)),
-   (('fabs', ('u2f32', a)), ('u2f32', a)),
+   (('fabs', ('u2f', a)), ('u2f', a)),
    (('iabs', ('iabs', a)), ('iabs', a)),
    (('iabs', ('ineg', a)), ('iabs', a)),
+   (('f2b', ('fneg', a)), ('f2b', a)),
+   (('i2b', ('ineg', a)), ('i2b', a)),
    (('~fadd', a, 0.0), a),
    (('iadd', a, 0), a),
    (('usadd_4x8', a, 0), a),
@@ -105,6 +108,11 @@ optimizations = [
    (('imul', a, 1), a),
    (('fmul', a, -1.0), ('fneg', a)),
    (('imul', a, -1), ('ineg', a)),
+   # If a < 0: fsign(a)*a*a => -1*a*a => -a*a => abs(a)*a
+   # If a > 0: fsign(a)*a*a => 1*a*a => a*a => abs(a)*a
+   # If a == 0: fsign(a)*a*a => 0*0*0 => abs(0)*0
+   (('fmul', ('fsign', a), ('fmul', a, a)), ('fmul', ('fabs', a), a)),
+   (('fmul', ('fmul', ('fsign', a), a), a), ('fmul', ('fabs', a), a)),
    (('~ffma', 0.0, a, b), b),
    (('~ffma', a, 0.0, b), b),
    (('~ffma', a, b, 0.0), ('fmul', a, b)),
@@ -114,15 +122,17 @@ optimizations = [
    (('~flrp', a, b, 1.0), b),
    (('~flrp', a, a, b), a),
    (('~flrp', 0.0, a, b), ('fmul', a, b)),
-   (('~flrp', a, b, ('b2f', c)), ('bcsel', c, b, a), 'options->lower_flrp32'),
+   (('~flrp', a, b, ('b2f', 'c@1')), ('bcsel', c, b, a), 'options->lower_flrp32'),
    (('~flrp', a, 0.0, c), ('fadd', ('fmul', ('fneg', a), c), a)),
    (('flrp@32', a, b, c), ('fadd', ('fmul', c, ('fsub', b, a)), a), 'options->lower_flrp32'),
    (('flrp@64', a, b, c), ('fadd', ('fmul', c, ('fsub', b, a)), a), 'options->lower_flrp64'),
+   (('ffloor', a), ('fsub', a, ('ffract', a)), 'options->lower_ffloor'),
    (('ffract', a), ('fsub', a, ('ffloor', a)), 'options->lower_ffract'),
-   (('~fadd', ('fmul', a, ('fadd', 1.0, ('fneg', ('b2f', c)))), ('fmul', b, ('b2f', c))), ('bcsel', c, b, a), 'options->lower_flrp32'),
+   (('fceil', a), ('fneg', ('ffloor', ('fneg', a))), 'options->lower_fceil'),
+   (('~fadd', ('fmul', a, ('fadd', 1.0, ('fneg', ('b2f', 'c@1')))), ('fmul', b, ('b2f', c))), ('bcsel', c, b, a), 'options->lower_flrp32'),
    (('~fadd@32', ('fmul', a, ('fadd', 1.0, ('fneg',         c ))), ('fmul', b,         c )), ('flrp', a, b, c), '!options->lower_flrp32'),
    (('~fadd@64', ('fmul', a, ('fadd', 1.0, ('fneg',         c ))), ('fmul', b,         c )), ('flrp', a, b, c), '!options->lower_flrp64'),
-   (('~fadd', a, ('fmul', ('b2f', c), ('fadd', b, ('fneg', a)))), ('bcsel', c, b, a), 'options->lower_flrp32'),
+   (('~fadd', a, ('fmul', ('b2f', 'c@1'), ('fadd', b, ('fneg', a)))), ('bcsel', c, b, a), 'options->lower_flrp32'),
    (('~fadd@32', a, ('fmul',         c , ('fadd', b, ('fneg', a)))), ('flrp', a, b, c), '!options->lower_flrp32'),
    (('~fadd@64', a, ('fmul',         c , ('fadd', b, ('fneg', a)))), ('flrp', a, b, c), '!options->lower_flrp64'),
    (('ffma', a, b, c), ('fadd', ('fmul', a, b), c), 'options->lower_ffma'),
@@ -162,9 +172,51 @@ optimizations = [
    # b2f(a) <= 0.0
    # b2f(a) == 0.0 because b2f(a) can only be 0 or 1
    # inot(a)
-   (('fge', 0.0, ('b2f', a)), ('inot', a)),
+   (('fge', 0.0, ('b2f', 'a@1')), ('inot', a)),
 
-   (('fge', ('fneg', ('b2f', a)), 0.0), ('inot', a)),
+   (('fge', ('fneg', ('b2f', 'a@1')), 0.0), ('inot', a)),
+
+   (('fne', ('fadd', ('b2f', 'a@1'), ('b2f', 'b@1')), 0.0), ('ior', a, b)),
+   (('fne', ('fmax', ('b2f', 'a@1'), ('b2f', 'b@1')), 0.0), ('ior', a, b)),
+   (('fne', ('bcsel', a, 1.0, ('b2f', 'b@1'))   , 0.0), ('ior', a, b)),
+   (('fne', ('b2f', 'a@1'), ('fneg', ('b2f', 'b@1'))),      ('ior', a, b)),
+   (('fne', ('fmul', ('b2f', 'a@1'), ('b2f', 'b@1')), 0.0), ('iand', a, b)),
+   (('fne', ('fmin', ('b2f', 'a@1'), ('b2f', 'b@1')), 0.0), ('iand', a, b)),
+   (('fne', ('bcsel', a, ('b2f', 'b@1'), 0.0)   , 0.0), ('iand', a, b)),
+   (('fne', ('fadd', ('b2f', 'a@1'), ('fneg', ('b2f', 'b@1'))), 0.0), ('ixor', a, b)),
+   (('fne',          ('b2f', 'a@1') ,          ('b2f', 'b@1') ),      ('ixor', a, b)),
+   (('fne', ('fneg', ('b2f', 'a@1')), ('fneg', ('b2f', 'b@1'))),      ('ixor', a, b)),
+   (('feq', ('fadd', ('b2f', 'a@1'), ('b2f', 'b@1')), 0.0), ('inot', ('ior', a, b))),
+   (('feq', ('fmax', ('b2f', 'a@1'), ('b2f', 'b@1')), 0.0), ('inot', ('ior', a, b))),
+   (('feq', ('bcsel', a, 1.0, ('b2f', 'b@1'))   , 0.0), ('inot', ('ior', a, b))),
+   (('feq', ('b2f', 'a@1'), ('fneg', ('b2f', 'b@1'))),      ('inot', ('ior', a, b))),
+   (('feq', ('fmul', ('b2f', 'a@1'), ('b2f', 'b@1')), 0.0), ('inot', ('iand', a, b))),
+   (('feq', ('fmin', ('b2f', 'a@1'), ('b2f', 'b@1')), 0.0), ('inot', ('iand', a, b))),
+   (('feq', ('bcsel', a, ('b2f', 'b@1'), 0.0)   , 0.0), ('inot', ('iand', a, b))),
+   (('feq', ('fadd', ('b2f', 'a@1'), ('fneg', ('b2f', 'b@1'))), 0.0), ('ieq', a, b)),
+   (('feq',          ('b2f', 'a@1') ,          ('b2f', 'b@1') ),      ('ieq', a, b)),
+   (('feq', ('fneg', ('b2f', 'a@1')), ('fneg', ('b2f', 'b@1'))),      ('ieq', a, b)),
+
+   # -(b2f(a) + b2f(b)) < 0
+   # 0 < b2f(a) + b2f(b)
+   # 0 != b2f(a) + b2f(b)       b2f must be 0 or 1, so the sum is non-negative
+   # a || b
+   (('flt', ('fneg', ('fadd', ('b2f', 'a@1'), ('b2f', 'b@1'))), 0.0), ('ior', a, b)),
+   (('flt', 0.0, ('fadd', ('b2f', 'a@1'), ('b2f', 'b@1'))), ('ior', a, b)),
+
+   # -(b2f(a) + b2f(b)) >= 0
+   # 0 >= b2f(a) + b2f(b)
+   # 0 == b2f(a) + b2f(b)       b2f must be 0 or 1, so the sum is non-negative
+   # !(a || b)
+   (('fge', ('fneg', ('fadd', ('b2f', 'a@1'), ('b2f', 'b@1'))), 0.0), ('inot', ('ior', a, b))),
+   (('fge', 0.0, ('fadd', ('b2f', 'a@1'), ('b2f', 'b@1'))), ('inot', ('ior', a, b))),
+
+   # Some optimizations (below) convert things like (a < b || c < b) into
+   # (min(a, c) < b).  However, this interfers with the previous optimizations
+   # that try to remove comparisons with negated sums of b2f.  This just
+   # breaks that apart.
+   (('flt', ('fmin', c, ('fneg', ('fadd', ('b2f', 'a@1'), ('b2f', 'b@1')))), 0.0),
+    ('ior', ('flt', c, 0.0), ('ior', a, b))),
 
    (('~flt', ('fadd', a, b), a), ('flt', b, 0.0)),
    (('~fge', ('fadd', a, b), a), ('fge', b, 0.0)),
@@ -185,24 +237,50 @@ optimizations = [
    # The fge in the second replacement is not a typo.  I leave the proof that
    # "fmin(-b2f(a), b) >= 0 <=> fmin(-b2f(a), b) == 0" as an exercise for the
    # reader.
-   (('fge', ('fmin', ('fneg', ('b2f', a)), b), 0.0), ('iand', ('inot', a), ('fge', b, 0.0))),
-   (('feq', ('fmin', ('fneg', ('b2f', a)), b), 0.0), ('iand', ('inot', a), ('fge', b, 0.0))),
+   (('fge', ('fmin', ('fneg', ('b2f', 'a@1')), 'b@1'), 0.0), ('iand', ('inot', a), ('fge', b, 0.0))),
+   (('feq', ('fmin', ('fneg', ('b2f', 'a@1')), 'b@1'), 0.0), ('iand', ('inot', a), ('fge', b, 0.0))),
 
-   (('feq', ('b2f', a), 0.0), ('inot', a)),
-   (('fne', ('b2f', a), 0.0), a),
-   (('ieq', ('b2i', a), 0),   ('inot', a)),
-   (('ine', ('b2i', a), 0),   a),
+   (('feq', ('b2f', 'a@1'), 0.0), ('inot', a)),
+   (('fne', ('b2f', 'a@1'), 0.0), a),
+   (('ieq', ('b2i', 'a@1'), 0),   ('inot', a)),
+   (('ine', ('b2i', 'a@1'), 0),   a),
+
+   (('fne', ('u2f', a), 0.0), ('ine', a, 0)),
+   (('feq', ('u2f', a), 0.0), ('ieq', a, 0)),
+   (('fge', ('u2f', a), 0.0), True),
+   (('fge', 0.0, ('u2f', a)), ('uge', 0, a)),    # ieq instead?
+   (('flt', ('u2f', a), 0.0), False),
+   (('flt', 0.0, ('u2f', a)), ('ult', 0, a)),    # ine instead?
+   (('fne', ('i2f', a), 0.0), ('ine', a, 0)),
+   (('feq', ('i2f', a), 0.0), ('ieq', a, 0)),
+   (('fge', ('i2f', a), 0.0), ('ige', a, 0)),
+   (('fge', 0.0, ('i2f', a)), ('ige', 0, a)),
+   (('flt', ('i2f', a), 0.0), ('ilt', a, 0)),
+   (('flt', 0.0, ('i2f', a)), ('ilt', 0, a)),
 
    # 0.0 < fabs(a)
    # fabs(a) > 0.0
    # fabs(a) != 0.0 because fabs(a) must be >= 0
    # a != 0.0
-   (('flt', 0.0, ('fabs', a)), ('fne', a, 0.0)),
+   (('~flt', 0.0, ('fabs', a)), ('fne', a, 0.0)),
 
-   (('fmax',                        ('b2f(is_used_once)', a),           ('b2f', b)),           ('b2f', ('ior', a, b))),
-   (('fmax', ('fneg(is_used_once)', ('b2f(is_used_once)', a)), ('fneg', ('b2f', b))), ('fneg', ('b2f', ('ior', a, b)))),
-   (('fmin',                        ('b2f(is_used_once)', a),           ('b2f', b)),           ('b2f', ('iand', a, b))),
-   (('fmin', ('fneg(is_used_once)', ('b2f(is_used_once)', a)), ('fneg', ('b2f', b))), ('fneg', ('b2f', ('iand', a, b)))),
+   # -fabs(a) < 0.0
+   # fabs(a) > 0.0
+   (('~flt', ('fneg', ('fabs', a)), 0.0), ('fne', a, 0.0)),
+
+   # 0.0 >= fabs(a)
+   # 0.0 == fabs(a)   because fabs(a) must be >= 0
+   # 0.0 == a
+   (('fge', 0.0, ('fabs', a)), ('feq', a, 0.0)),
+
+   # -fabs(a) >= 0.0
+   # 0.0 >= fabs(a)
+   (('fge', ('fneg', ('fabs', a)), 0.0), ('feq', a, 0.0)),
+
+   (('fmax',                        ('b2f(is_used_once)', 'a@1'),           ('b2f', 'b@1')),           ('b2f', ('ior', a, b))),
+   (('fmax', ('fneg(is_used_once)', ('b2f(is_used_once)', 'a@1')), ('fneg', ('b2f', 'b@1'))), ('fneg', ('b2f', ('ior', a, b)))),
+   (('fmin',                        ('b2f(is_used_once)', 'a@1'),           ('b2f', 'b@1')),           ('b2f', ('iand', a, b))),
+   (('fmin', ('fneg(is_used_once)', ('b2f(is_used_once)', 'a@1')), ('fneg', ('b2f', 'b@1'))), ('fneg', ('b2f', ('iand', a, b)))),
 
    # fmin(b2f(a), b)
    # bcsel(a, fmin(b2f(a), b), fmin(b2f(a), b))
@@ -211,7 +289,7 @@ optimizations = [
    #
    # Since b is a constant, constant folding will eliminate the fmin and the
    # fmax.  If b is > 1.0, the bcsel will be replaced with a b2f.
-   (('fmin', ('b2f', a), '#b'), ('bcsel', a, ('fmin', b, 1.0), ('fmin', b, 0.0))),
+   (('fmin', ('b2f', 'a@1'), '#b'), ('bcsel', a, ('fmin', b, 1.0), ('fmin', b, 0.0))),
 
    (('flt', ('fadd(is_used_once)', a, ('fneg', b)), 0.0), ('flt', a, b)),
 
@@ -222,6 +300,11 @@ optimizations = [
    (('~bcsel', ('fge', b, a), b, a), ('fmax', a, b)),
    (('bcsel', ('inot', a), b, c), ('bcsel', a, c, b)),
    (('bcsel', a, ('bcsel', a, b, c), d), ('bcsel', a, b, d)),
+   (('bcsel', a, b, ('bcsel', a, c, d)), ('bcsel', a, b, d)),
+   (('bcsel', a, ('bcsel', b, c, d), ('bcsel(is_used_once)', b, c, 'e')), ('bcsel', b, c, ('bcsel', a, d, 'e'))),
+   (('bcsel', a, ('bcsel(is_used_once)', b, c, d), ('bcsel', b, c, 'e')), ('bcsel', b, c, ('bcsel', a, d, 'e'))),
+   (('bcsel', a, ('bcsel', b, c, d), ('bcsel(is_used_once)', b, 'e', d)), ('bcsel', b, ('bcsel', a, c, 'e'), d)),
+   (('bcsel', a, ('bcsel(is_used_once)', b, c, d), ('bcsel', b, 'e', d)), ('bcsel', b, ('bcsel', a, c, 'e'), d)),
    (('bcsel', a, True, 'b@bool'), ('ior', a, b)),
    (('fmin', a, a), a),
    (('fmax', a, a), a),
@@ -229,6 +312,12 @@ optimizations = [
    (('imax', a, a), a),
    (('umin', a, a), a),
    (('umax', a, a), a),
+   (('fmax', ('fmax', a, b), b), ('fmax', a, b)),
+   (('umax', ('umax', a, b), b), ('umax', a, b)),
+   (('imax', ('imax', a, b), b), ('imax', a, b)),
+   (('fmin', ('fmin', a, b), b), ('fmin', a, b)),
+   (('umin', ('umin', a, b), b), ('umin', a, b)),
+   (('imin', ('imin', a, b), b), ('imin', a, b)),
    (('fmax', a, ('fneg', a)), ('fabs', a)),
    (('imax', a, ('ineg', a)), ('iabs', a)),
    (('fmin', a, ('fneg', a)), ('fneg', ('fabs', a))),
@@ -245,6 +334,7 @@ optimizations = [
    (('imax', a, ('ineg', a)), ('iabs', a)),
    (('~fmin', ('fmax', a, 0.0), 1.0), ('fsat', a), '!options->lower_fsat'),
    (('~fmax', ('fmin', a, 1.0), 0.0), ('fsat', a), '!options->lower_fsat'),
+   (('fsat', ('fsign', a)), ('b2f', ('flt', 0.0, a))),
    (('fsat', a), ('fmin', ('fmax', a, 0.0), 1.0), 'options->lower_fsat'),
    (('fsat', ('fsat', a)), ('fsat', a)),
    (('fmin', ('fmax', ('fmin', ('fmax', a, b), c), b), c), ('fmin', ('fmax', a, b), c)),
@@ -288,7 +378,7 @@ optimizations = [
    (('iand', ('uge(is_used_once)', a, c), ('uge', b, c)), ('uge', ('umin', a, b), c)),
 
    (('ior', 'a@bool', ('ieq', a, False)), True),
-   (('ior', 'a@bool', ('inot', a)), True),
+   (('ior', a, ('inot', a)), -1),
 
    (('iand', ('ieq', 'a@32', 0), ('ieq', 'b@32', 0)), ('ieq', ('ior', 'a@32', 'b@32'), 0)),
 
@@ -348,14 +438,14 @@ optimizations = [
    (('fne', ('fneg', a), a), ('fne', a, 0.0)),
    (('feq', ('fneg', a), a), ('feq', a, 0.0)),
    # Emulating booleans
-   (('imul', ('b2i', a), ('b2i', b)), ('b2i', ('iand', a, b))),
-   (('fmul', ('b2f', a), ('b2f', b)), ('b2f', ('iand', a, b))),
-   (('fsat', ('fadd', ('b2f', a), ('b2f', b))), ('b2f', ('ior', a, b))),
-   (('iand', 'a@bool', 1.0), ('b2f', a), '!options->lower_b2f'),
+   (('imul', ('b2i', 'a@1'), ('b2i', 'b@1')), ('b2i', ('iand', a, b))),
+   (('fmul', ('b2f', 'a@1'), ('b2f', 'b@1')), ('b2f', ('iand', a, b))),
+   (('fsat', ('fadd', ('b2f', 'a@1'), ('b2f', 'b@1'))), ('b2f', ('ior', a, b))),
+   (('iand', 'a@bool32', 1.0), ('b2f', a)),
    # True/False are ~0 and 0 in NIR.  b2i of True is 1, and -1 is ~0 (True).
-   (('ineg', ('b2i@32', a)), a),
-   (('flt', ('fneg', ('b2f', a)), 0), a), # Generated by TGSI KILL_IF.
-   (('flt', ('fsub', 0.0, ('b2f', a)), 0), a), # Generated by TGSI KILL_IF.
+   (('ineg', ('b2i32', 'a@32')), a),
+   (('flt', ('fneg', ('b2f', 'a@1')), 0), a), # Generated by TGSI KILL_IF.
+   (('flt', ('fsub', 0.0, ('b2f', 'a@1')), 0), a), # Generated by TGSI KILL_IF.
    # Comparison with the same args.  Note that these are not done for
    # the float versions because NaN always returns false on float
    # inequalities.
@@ -436,7 +526,7 @@ optimizations = [
    (('bcsel@32', a, -0.0, -1.0), ('fneg', ('b2f', ('inot', a)))),
    (('bcsel', True, b, c), b),
    (('bcsel', False, b, c), c),
-   (('bcsel', a, ('b2f(is_used_once)', b), ('b2f', c)), ('b2f', ('bcsel', a, b, c))),
+   (('bcsel', a, ('b2f(is_used_once)', 'b@32'), ('b2f', 'c@32')), ('b2f', ('bcsel', a, b, c))),
    # The result of this should be hit by constant propagation and, in the
    # next round of opt_algebraic, get picked up by one of the above two.
    (('bcsel', '#a', b, c), ('bcsel', ('ine', 'a', 0), b, c)),
@@ -444,16 +534,36 @@ optimizations = [
    (('bcsel', a, b, b), b),
    (('fcsel', a, b, b), b),
 
+   # D3D Boolean emulation
+   (('bcsel', a, -1, 0), ('ineg', ('b2i', 'a@1'))),
+   (('bcsel', a, 0, -1), ('ineg', ('b2i', ('inot', a)))),
+   (('iand', ('ineg', ('b2i', 'a@1')), ('ineg', ('b2i', 'b@1'))),
+    ('ineg', ('b2i', ('iand', a, b)))),
+   (('ior', ('ineg', ('b2i','a@1')), ('ineg', ('b2i', 'b@1'))),
+    ('ineg', ('b2i', ('ior', a, b)))),
+   (('ieq', ('ineg', ('b2i', 'a@1')), 0), ('inot', a)),
+   (('ieq', ('ineg', ('b2i', 'a@1')), -1), a),
+   (('ine', ('ineg', ('b2i', 'a@1')), 0), a),
+   (('ine', ('ineg', ('b2i', 'a@1')), -1), ('inot', a)),
+   (('iand', ('ineg', ('b2i', a)), 1.0), ('b2f', a)),
+
    # Conversions
-   (('i2b', ('b2i', a)), a),
-   (('i2b', 'a@bool'), a),
-   (('f2i32', ('ftrunc', a)), ('f2i32', a)),
-   (('f2u32', ('ftrunc', a)), ('f2u32', a)),
+   (('i2b32', ('b2i', 'a@32')), a),
+   (('f2i', ('ftrunc', a)), ('f2i', a)),
+   (('f2u', ('ftrunc', a)), ('f2u', a)),
    (('i2b', ('ineg', a)), ('i2b', a)),
    (('i2b', ('iabs', a)), ('i2b', a)),
    (('fabs', ('b2f', a)), ('b2f', a)),
    (('iabs', ('b2i', a)), ('b2i', a)),
-   (('inot', ('f2b', a)), ('feq', a, 0.0)),
+   (('inot', ('f2b1', a)), ('feq', a, 0.0)),
+
+   # Ironically, mark these as imprecise because removing the conversions may
+   # preserve more precision than doing the conversions (e.g.,
+   # uint(float(0x81818181u)) == 0x81818200).
+   (('~f2i32', ('i2f', 'a@32')), a),
+   (('~f2i32', ('u2f', 'a@32')), a),
+   (('~f2u32', ('i2f', 'a@32')), a),
+   (('~f2u32', ('u2f', 'a@32')), a),
 
    # Packing and then unpacking does nothing
    (('unpack_64_2x32_split_x', ('pack_64_2x32_split', a, b)), a),
@@ -462,13 +572,23 @@ optimizations = [
                            ('unpack_64_2x32_split_y', a)), a),
 
    # Byte extraction
+   (('ushr', ('ishl', 'a@32', 24), 24), ('extract_u8', a, 0), '!options->lower_extract_byte'),
+   (('ushr', ('ishl', 'a@32', 16), 24), ('extract_u8', a, 1), '!options->lower_extract_byte'),
+   (('ushr', ('ishl', 'a@32', 8), 24), ('extract_u8', a, 2), '!options->lower_extract_byte'),
    (('ushr', 'a@32', 24), ('extract_u8', a, 3), '!options->lower_extract_byte'),
+   (('ishr', ('ishl', 'a@32', 24), 24), ('extract_i8', a, 0), '!options->lower_extract_byte'),
+   (('ishr', ('ishl', 'a@32', 16), 24), ('extract_i8', a, 1), '!options->lower_extract_byte'),
+   (('ishr', ('ishl', 'a@32', 8), 24), ('extract_i8', a, 2), '!options->lower_extract_byte'),
+   (('ishr', 'a@32', 24), ('extract_i8', a, 3), '!options->lower_extract_byte'),
    (('iand', 0xff, ('ushr', a, 16)), ('extract_u8', a, 2), '!options->lower_extract_byte'),
    (('iand', 0xff, ('ushr', a,  8)), ('extract_u8', a, 1), '!options->lower_extract_byte'),
    (('iand', 0xff, a), ('extract_u8', a, 0), '!options->lower_extract_byte'),
 
     # Word extraction
+   (('ushr', ('ishl', 'a@32', 16), 16), ('extract_u16', a, 0), '!options->lower_extract_word'),
    (('ushr', 'a@32', 16), ('extract_u16', a, 1), '!options->lower_extract_word'),
+   (('ishr', ('ishl', 'a@32', 16), 16), ('extract_i16', a, 0), '!options->lower_extract_word'),
+   (('ishr', 'a@32', 16), ('extract_i16', a, 1), '!options->lower_extract_word'),
    (('iand', 0xffff, a), ('extract_u16', a, 0), '!options->lower_extract_word'),
 
    # Subtracts
@@ -498,11 +618,11 @@ optimizations = [
    # Reassociate constants in add/mul chains so they can be folded together.
    # For now, we mostly only handle cases where the constants are separated by
    # a single non-constant.  We could do better eventually.
-   (('~fmul', '#a', ('fmul', b, '#c')), ('fmul', ('fmul', a, c), b)),
-   (('imul', '#a', ('imul', b, '#c')), ('imul', ('imul', a, c), b)),
-   (('~fadd', '#a',          ('fadd', b, '#c')),  ('fadd', ('fadd', a,          c),           b)),
-   (('~fadd', '#a', ('fneg', ('fadd', b, '#c'))), ('fadd', ('fadd', a, ('fneg', c)), ('fneg', b))),
-   (('iadd', '#a', ('iadd', b, '#c')), ('iadd', ('iadd', a, c), b)),
+   (('~fmul', '#a', ('fmul', 'b(is_not_const)', '#c')), ('fmul', ('fmul', a, c), b)),
+   (('imul', '#a', ('imul', 'b(is_not_const)', '#c')), ('imul', ('imul', a, c), b)),
+   (('~fadd', '#a',          ('fadd', 'b(is_not_const)', '#c')),  ('fadd', ('fadd', a,          c),           b)),
+   (('~fadd', '#a', ('fneg', ('fadd', 'b(is_not_const)', '#c'))), ('fadd', ('fadd', a, ('fneg', c)), ('fneg', b))),
+   (('iadd', '#a', ('iadd', 'b(is_not_const)', '#c')), ('iadd', ('iadd', a, c), b)),
 
    # By definition...
    (('bcsel', ('ige', ('find_lsb', a), 0), ('find_lsb', a), -1), ('find_lsb', a)),
@@ -613,40 +733,58 @@ optimizations = [
 
     (('unpack_unorm_2x16', 'v'),
      ('fdiv', ('u2f32', ('vec2', ('extract_u16', 'v', 0),
-                                 ('extract_u16', 'v', 1))),
+                                  ('extract_u16', 'v', 1))),
               65535.0),
      'options->lower_unpack_unorm_2x16'),
 
     (('unpack_unorm_4x8', 'v'),
      ('fdiv', ('u2f32', ('vec4', ('extract_u8', 'v', 0),
-                                 ('extract_u8', 'v', 1),
-                                 ('extract_u8', 'v', 2),
-                                 ('extract_u8', 'v', 3))),
+                                  ('extract_u8', 'v', 1),
+                                  ('extract_u8', 'v', 2),
+                                  ('extract_u8', 'v', 3))),
               255.0),
      'options->lower_unpack_unorm_4x8'),
 
     (('unpack_snorm_2x16', 'v'),
-     ('fmin', 1.0, ('fmax', -1.0, ('fdiv', ('i2f32', ('vec2', ('extract_i16', 'v', 0),
-                                                              ('extract_i16', 'v', 1))),
+     ('fmin', 1.0, ('fmax', -1.0, ('fdiv', ('i2f', ('vec2', ('extract_i16', 'v', 0),
+                                                            ('extract_i16', 'v', 1))),
                                            32767.0))),
      'options->lower_unpack_snorm_2x16'),
 
     (('unpack_snorm_4x8', 'v'),
-     ('fmin', 1.0, ('fmax', -1.0, ('fdiv', ('i2f32', ('vec4', ('extract_i8', 'v', 0),
-                                                              ('extract_i8', 'v', 1),
-                                                              ('extract_i8', 'v', 2),
-                                                              ('extract_i8', 'v', 3))),
+     ('fmin', 1.0, ('fmax', -1.0, ('fdiv', ('i2f', ('vec4', ('extract_i8', 'v', 0),
+                                                            ('extract_i8', 'v', 1),
+                                                            ('extract_i8', 'v', 2),
+                                                            ('extract_i8', 'v', 3))),
                                            127.0))),
      'options->lower_unpack_snorm_4x8'),
 ]
 
 invert = OrderedDict([('feq', 'fne'), ('fne', 'feq'), ('fge', 'flt'), ('flt', 'fge')])
 
-for left, right in list(itertools.combinations(invert.keys(), 2)) + zip(invert.keys(), invert.keys()):
+for left, right in itertools.combinations_with_replacement(invert.keys(), 2):
    optimizations.append((('inot', ('ior(is_used_once)', (left, a, b), (right, c, d))),
                          ('iand', (invert[left], a, b), (invert[right], c, d))))
    optimizations.append((('inot', ('iand(is_used_once)', (left, a, b), (right, c, d))),
                          ('ior', (invert[left], a, b), (invert[right], c, d))))
+
+# Optimize x2bN(b2x(x)) -> x
+for size in type_sizes('bool'):
+    aN = 'a@' + str(size)
+    f2bN = 'f2b' + str(size)
+    i2bN = 'i2b' + str(size)
+    optimizations.append(((f2bN, ('b2f', aN)), a))
+    optimizations.append(((i2bN, ('b2i', aN)), a))
+
+# Optimize x2yN(b2x(x)) -> b2y
+for x, y in itertools.product(['f', 'u', 'i'], ['f', 'u', 'i']):
+   if x != 'f' and y != 'f' and x != y:
+      continue
+
+   b2x = 'b2f' if x == 'f' else 'b2i'
+   b2y = 'b2f' if y == 'f' else 'b2i'
+   x2yN = '{}2{}'.format(x, y)
+   optimizations.append(((x2yN, (b2x, a)), (b2y, a)))
 
 def fexp2i(exp, bits):
    # We assume that exp is already in the right range.
@@ -791,15 +929,12 @@ late_optimizations = [
    (('fdot4', a, b), ('fdot_replicated4', a, b), 'options->fdot_replicates'),
    (('fdph', a, b), ('fdph_replicated', a, b), 'options->fdot_replicates'),
 
-   (('b2f(is_used_more_than_once)', ('inot', a)), ('bcsel', a, 0.0, 1.0)),
-   (('fneg(is_used_more_than_once)', ('b2f', ('inot', a))), ('bcsel', a, -0.0, -1.0)),
+   (('b2f(is_used_more_than_once)', ('inot', 'a@1')), ('bcsel', a, 0.0, 1.0)),
+   (('fneg(is_used_more_than_once)', ('b2f', ('inot', 'a@1'))), ('bcsel', a, -0.0, -1.0)),
 
    # we do these late so that we don't get in the way of creating ffmas
    (('fmin', ('fadd(is_used_once)', '#c', a), ('fadd(is_used_once)', '#c', b)), ('fadd', c, ('fmin', a, b))),
    (('fmax', ('fadd(is_used_once)', '#c', a), ('fadd(is_used_once)', '#c', b)), ('fadd', c, ('fmax', a, b))),
-
-   # Lowered for backends without a dedicated b2f instruction
-   (('b2f@32', a), ('iand', a, 1.0), 'options->lower_b2f'),
 ]
 
 print(nir_algebraic.AlgebraicPass("nir_opt_algebraic", optimizations).render())

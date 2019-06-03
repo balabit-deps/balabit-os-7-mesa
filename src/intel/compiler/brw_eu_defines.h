@@ -41,14 +41,14 @@
 /* Using the GNU statement expression extension */
 #define SET_FIELD(value, field)                                         \
    ({                                                                   \
-      uint32_t fieldval = (value) << field ## _SHIFT;                   \
+      uint32_t fieldval = (uint32_t)(value) << field ## _SHIFT;         \
       assert((fieldval & ~ field ## _MASK) == 0);                       \
       fieldval & field ## _MASK;                                        \
    })
 
 #define SET_BITS(value, high, low)                                      \
    ({                                                                   \
-      const uint32_t fieldval = (value) << (low);                       \
+      const uint32_t fieldval = (uint32_t)(value) << (low);             \
       assert((fieldval & ~INTEL_MASK(high, low)) == 0);                 \
       fieldval & INTEL_MASK(high, low);                                 \
    })
@@ -316,6 +316,13 @@ enum opcode {
    SHADER_OPCODE_COS,
 
    /**
+    * A generic "send" opcode.  The first two sources are the message
+    * descriptor and extended message descriptor respectively.  The third
+    * and optional fourth sources are the message payload
+    */
+   SHADER_OPCODE_SEND,
+
+   /**
     * Texture sampling opcodes.
     *
     * LOGICAL opcodes are eventually translated to the matching non-LOGICAL
@@ -353,6 +360,9 @@ enum opcode {
    SHADER_OPCODE_TG4_OFFSET_LOGICAL,
    SHADER_OPCODE_SAMPLEINFO,
    SHADER_OPCODE_SAMPLEINFO_LOGICAL,
+
+   SHADER_OPCODE_IMAGE_SIZE,
+   SHADER_OPCODE_IMAGE_SIZE_LOGICAL,
 
    /**
     * Combines multiple sources of size 1 into a larger virtual GRF.
@@ -395,6 +405,8 @@ enum opcode {
     */
    SHADER_OPCODE_UNTYPED_ATOMIC,
    SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL,
+   SHADER_OPCODE_UNTYPED_ATOMIC_FLOAT,
+   SHADER_OPCODE_UNTYPED_ATOMIC_FLOAT_LOGICAL,
    SHADER_OPCODE_UNTYPED_SURFACE_READ,
    SHADER_OPCODE_UNTYPED_SURFACE_READ_LOGICAL,
    SHADER_OPCODE_UNTYPED_SURFACE_WRITE,
@@ -514,13 +526,10 @@ enum opcode {
    FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD,
    FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD_GEN7,
    FS_OPCODE_VARYING_PULL_CONSTANT_LOAD_GEN4,
-   FS_OPCODE_VARYING_PULL_CONSTANT_LOAD_GEN7,
    FS_OPCODE_VARYING_PULL_CONSTANT_LOAD_LOGICAL,
    FS_OPCODE_DISCARD_JUMP,
    FS_OPCODE_SET_SAMPLE_ID,
    FS_OPCODE_PACK_HALF_2x16_SPLIT,
-   FS_OPCODE_UNPACK_HALF_2x16_SPLIT_X,
-   FS_OPCODE_UNPACK_HALF_2x16_SPLIT_Y,
    FS_OPCODE_PLACEHOLDER_HALT,
    FS_OPCODE_INTERPOLATE_AT_SAMPLE,
    FS_OPCODE_INTERPOLATE_AT_SHARED_OFFSET,
@@ -807,6 +816,8 @@ enum tex_logical_srcs {
    TEX_LOGICAL_SRC_LOD,
    /** dPdy if the operation takes explicit derivatives */
    TEX_LOGICAL_SRC_LOD2,
+   /** Min LOD */
+   TEX_LOGICAL_SRC_MIN_LOD,
    /** Sample index */
    TEX_LOGICAL_SRC_SAMPLE_INDEX,
    /** MCS data */
@@ -1159,6 +1170,7 @@ enum brw_message_target {
 #define HSW_DATAPORT_DC_PORT1_ATOMIC_COUNTER_OP                     11
 #define HSW_DATAPORT_DC_PORT1_ATOMIC_COUNTER_OP_SIMD4X2             12
 #define HSW_DATAPORT_DC_PORT1_TYPED_SURFACE_WRITE                   13
+#define GEN9_DATAPORT_DC_PORT1_UNTYPED_ATOMIC_FLOAT_OP              0x1b
 
 /* GEN9 */
 #define GEN9_DATAPORT_RC_RENDER_TARGET_WRITE                        12
@@ -1177,7 +1189,9 @@ enum brw_message_target {
 #define GEN8_BTI_STATELESS_IA_COHERENT   255
 #define GEN8_BTI_STATELESS_NON_COHERENT  253
 
-/* dataport atomic operations. */
+/* Dataport atomic operations for Untyped Atomic Integer Operation message
+ * (and others).
+ */
 #define BRW_AOP_AND                   1
 #define BRW_AOP_OR                    2
 #define BRW_AOP_XOR                   3
@@ -1193,6 +1207,11 @@ enum brw_message_target {
 #define BRW_AOP_UMIN                  13
 #define BRW_AOP_CMPWR                 14
 #define BRW_AOP_PREDEC                15
+
+/* Dataport atomic operations for Untyped Atomic Float Operation message. */
+#define BRW_AOP_FMAX                  1
+#define BRW_AOP_FMIN                  2
+#define BRW_AOP_FCMPWR                3
 
 #define BRW_MATH_FUNCTION_INV                              1
 #define BRW_MATH_FUNCTION_LOG                              2

@@ -63,6 +63,15 @@ program_resource_visitor::process(const glsl_type *type, const char *name,
 void
 program_resource_visitor::process(ir_variable *var, bool use_std430_as_default)
 {
+   const glsl_type *t =
+      var->data.from_named_ifc_block ? var->get_interface_type() : var->type;
+   process(var, t, use_std430_as_default);
+}
+
+void
+program_resource_visitor::process(ir_variable *var, const glsl_type *var_type,
+                                  bool use_std430_as_default)
+{
    unsigned record_array_count = 1;
    const bool row_major =
       var->data.matrix_layout == GLSL_MATRIX_LAYOUT_ROW_MAJOR;
@@ -72,8 +81,7 @@ program_resource_visitor::process(ir_variable *var, bool use_std430_as_default)
          get_internal_ifc_packing(use_std430_as_default) :
       var->type->get_internal_ifc_packing(use_std430_as_default);
 
-   const glsl_type *t =
-      var->data.from_named_ifc_block ? var->get_interface_type() : var->type;
+   const glsl_type *t = var_type;
    const glsl_type *t_without_array = t->without_array();
 
    /* false is always passed for the row_major parameter to the other
@@ -690,9 +698,11 @@ private:
 
          /* Set image access qualifiers */
          const GLenum access =
-            (current_var->data.memory_read_only ? GL_READ_ONLY :
-             current_var->data.memory_write_only ? GL_WRITE_ONLY :
-                GL_READ_WRITE);
+            current_var->data.memory_read_only ?
+            (current_var->data.memory_write_only ? GL_NONE :
+                                                   GL_READ_ONLY) :
+            (current_var->data.memory_write_only ? GL_WRITE_ONLY :
+                                                   GL_READ_WRITE);
 
          if (current_var->data.bindless) {
             if (!set_opaque_indices(base_type, uniform, name,
@@ -1209,8 +1219,12 @@ link_setup_uniform_remap_tables(struct gl_context *ctx,
       if (empty_locs)
          chosen_location = link_util_find_empty_block(prog, &prog->data->UniformStorage[i]);
 
-      /* Add new entries to the total amount of entries. */
-      total_entries += entries;
+      /* Add new entries to the total amount for checking against MAX_UNIFORM-
+       * _LOCATIONS. This only applies to the default uniform block (-1),
+       * because locations of uniform block entries are not assignable.
+       */
+      if (prog->data->UniformStorage[i].block_index == -1)
+         total_entries += entries;
 
       if (chosen_location != -1) {
          empty_locs -= entries;

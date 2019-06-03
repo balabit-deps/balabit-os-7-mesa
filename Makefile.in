@@ -303,8 +303,6 @@ EXEEXT = @EXEEXT@
 EXPAT_CFLAGS = @EXPAT_CFLAGS@
 EXPAT_LIBS = @EXPAT_LIBS@
 FGREP = @FGREP@
-FREEDRENO_CFLAGS = @FREEDRENO_CFLAGS@
-FREEDRENO_LIBS = @FREEDRENO_LIBS@
 GALLIUM_PIPE_LOADER_DEFINES = @GALLIUM_PIPE_LOADER_DEFINES@
 GBM_PC_LIB_PRIV = @GBM_PC_LIB_PRIV@
 GBM_PC_REQ_PRIV = @GBM_PC_REQ_PRIV@
@@ -417,11 +415,16 @@ PTHREAD_CC = @PTHREAD_CC@
 PTHREAD_CFLAGS = @PTHREAD_CFLAGS@
 PTHREAD_LIBS = @PTHREAD_LIBS@
 PWR8_CFLAGS = @PWR8_CFLAGS@
-PYTHON2 = @PYTHON2@
+PYTHON = @PYTHON@
+PYTHON_EXEC_PREFIX = @PYTHON_EXEC_PREFIX@
+PYTHON_PLATFORM = @PYTHON_PLATFORM@
+PYTHON_PREFIX = @PYTHON_PREFIX@
+PYTHON_VERSION = @PYTHON_VERSION@
 RADEON_CFLAGS = @RADEON_CFLAGS@
 RADEON_LIBS = @RADEON_LIBS@
 RANLIB = @RANLIB@
 RM = @RM@
+SCANNER_ARG = @SCANNER_ARG@
 SED = @SED@
 SELINUX_CFLAGS = @SELINUX_CFLAGS@
 SELINUX_LIBS = @SELINUX_LIBS@
@@ -541,10 +544,13 @@ mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
 pdfdir = @pdfdir@
+pkgpyexecdir = @pkgpyexecdir@
+pkgpythondir = @pkgpythondir@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 psdir = @psdir@
-runstatedir = @runstatedir@
+pyexecdir = @pyexecdir@
+pythondir = @pythondir@
 sbindir = @sbindir@
 sharedstatedir = @sharedstatedir@
 srcdir = @srcdir@
@@ -559,6 +565,7 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 SUBDIRS = src
 AM_DISTCHECK_CONFIGURE_FLAGS = \
+	--enable-autotools \
 	--enable-dri \
 	--enable-dri3 \
 	--enable-egl \
@@ -582,7 +589,7 @@ AM_DISTCHECK_CONFIGURE_FLAGS = \
 	--enable-libunwind \
 	--with-platforms=x11,wayland,drm,surfaceless \
 	--with-dri-drivers=i915,i965,nouveau,radeon,r200,swrast \
-	--with-gallium-drivers=i915,nouveau,r300,pl111,r600,radeonsi,freedreno,svga,swrast,vc4,tegra,virgl,swr,etnaviv,imx \
+	--with-gallium-drivers=i915,nouveau,r300,kmsro,r600,radeonsi,freedreno,svga,swrast,vc4,tegra,virgl,swr,etnaviv \
 	--with-vulkan-drivers=intel,radeon
 
 ACLOCAL_AMFLAGS = -I m4

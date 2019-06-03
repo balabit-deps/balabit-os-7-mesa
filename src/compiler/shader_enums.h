@@ -26,6 +26,8 @@
 #ifndef SHADER_ENUMS_H
 #define SHADER_ENUMS_H
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -46,7 +48,15 @@ typedef enum
    MESA_SHADER_GEOMETRY = 3,
    MESA_SHADER_FRAGMENT = 4,
    MESA_SHADER_COMPUTE = 5,
+   /* must be last so it doesn't affect the GL pipeline */
+   MESA_SHADER_KERNEL = 6,
 } gl_shader_stage;
+
+static inline bool
+gl_shader_stage_is_compute(gl_shader_stage stage)
+{
+   return stage == MESA_SHADER_COMPUTE || stage == MESA_SHADER_KERNEL;
+}
 
 /**
  * Number of STATE_* values we need to address any GL state.
@@ -70,7 +80,15 @@ const char *_mesa_shader_stage_to_string(unsigned stage);
  */
 const char *_mesa_shader_stage_to_abbrev(unsigned stage);
 
+/**
+ * GL related stages (not including CL)
+ */
 #define MESA_SHADER_STAGES (MESA_SHADER_COMPUTE + 1)
+
+/**
+ * All stages
+ */
+#define MESA_ALL_SHADER_STAGES (MESA_SHADER_KERNEL + 1)
 
 
 /**
@@ -601,6 +619,12 @@ typedef enum
     */
    SYSTEM_VALUE_VERTEX_CNT,
 
+   /**
+    * Driver internal varying-coord, used for varying-fetch instructions.
+    * Not externally visible.
+    */
+   SYSTEM_VALUE_VARYING_COORD,
+
    SYSTEM_VALUE_MAX             /**< Number of values */
 } gl_system_value;
 
@@ -684,11 +708,13 @@ enum gl_frag_depth_layout
 /**
  * \brief Buffer access qualifiers
  */
-enum gl_buffer_access_qualifier
+enum gl_access_qualifier
 {
-   ACCESS_COHERENT = 1,
-   ACCESS_RESTRICT = 2,
-   ACCESS_VOLATILE = 4,
+   ACCESS_COHERENT      = (1 << 0),
+   ACCESS_RESTRICT      = (1 << 1),
+   ACCESS_VOLATILE      = (1 << 2),
+   ACCESS_NON_READABLE  = (1 << 3),
+   ACCESS_NON_WRITEABLE = (1 << 4),
 };
 
 /**

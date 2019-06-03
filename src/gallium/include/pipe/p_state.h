@@ -151,8 +151,12 @@ struct pipe_rasterizer_state
     * When false, depth clipping is disabled and the depth value will be
     * clamped later at the per-pixel level before depth testing.
     * This depends on PIPE_CAP_DEPTH_CLIP_DISABLE.
+    *
+    * If PIPE_CAP_DEPTH_CLIP_DISABLE_SEPARATE is unsupported, depth_clip_near
+    * is equal to depth_clip_far.
     */
-   unsigned depth_clip:1;
+   unsigned depth_clip_near:1;
+   unsigned depth_clip_far:1;
 
    /**
     * When true clip space in the z axis goes from [0..1] (D3D).  When false
@@ -439,6 +443,13 @@ struct pipe_surface
    uint16_t width;               /**< logical width in pixels */
    uint16_t height;              /**< logical height in pixels */
 
+   /**
+    * Number of samples for the surface.  This will be 0 if rendering
+    * should use the resource's nr_samples, or another value if the resource
+    * is bound using FramebufferTexture2DMultisampleEXT.
+    */
+   unsigned nr_samples:8;
+
    union pipe_surface_desc u;
 };
 
@@ -480,7 +491,8 @@ struct pipe_image_view
 {
    struct pipe_resource *resource; /**< resource into which this is a view  */
    enum pipe_format format;      /**< typed PIPE_FORMAT_x */
-   unsigned access;              /**< PIPE_IMAGE_ACCESS_x */
+   uint16_t access;              /**< PIPE_IMAGE_ACCESS_x */
+   uint16_t shader_access;       /**< PIPE_IMAGE_ACCESS_x */
 
    union {
       struct {

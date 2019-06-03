@@ -165,7 +165,7 @@ am__objects_1 = brw_binding_tables.lo brw_blorp.lo brw_bufmgr.lo \
 	intel_pixel.lo intel_pixel_copy.lo intel_pixel_draw.lo \
 	intel_pixel_read.lo intel_screen.lo intel_state.lo \
 	intel_tex.lo intel_tex_copy.lo intel_tex_image.lo \
-	intel_tex_validate.lo intel_tiled_memcpy.lo intel_upload.lo
+	intel_tex_validate.lo intel_upload.lo
 am__objects_2 = brw_oa_metrics.lo
 am_libi965_dri_la_OBJECTS = $(am__objects_1) $(am__objects_2)
 libi965_dri_la_OBJECTS = $(am_libi965_dri_la_OBJECTS)
@@ -330,7 +330,6 @@ am__depfiles_remade = ./$(DEPDIR)/brw_binding_tables.Plo \
 	./$(DEPDIR)/intel_state.Plo ./$(DEPDIR)/intel_tex.Plo \
 	./$(DEPDIR)/intel_tex_copy.Plo ./$(DEPDIR)/intel_tex_image.Plo \
 	./$(DEPDIR)/intel_tex_validate.Plo \
-	./$(DEPDIR)/intel_tiled_memcpy.Plo \
 	./$(DEPDIR)/intel_upload.Plo \
 	./$(DEPDIR)/libi965_gen10_la-genX_blorp_exec.Plo \
 	./$(DEPDIR)/libi965_gen10_la-genX_state_upload.Plo \
@@ -489,8 +488,6 @@ EXEEXT = @EXEEXT@
 EXPAT_CFLAGS = @EXPAT_CFLAGS@
 EXPAT_LIBS = @EXPAT_LIBS@
 FGREP = @FGREP@
-FREEDRENO_CFLAGS = @FREEDRENO_CFLAGS@
-FREEDRENO_LIBS = @FREEDRENO_LIBS@
 GALLIUM_PIPE_LOADER_DEFINES = @GALLIUM_PIPE_LOADER_DEFINES@
 GBM_PC_LIB_PRIV = @GBM_PC_LIB_PRIV@
 GBM_PC_REQ_PRIV = @GBM_PC_REQ_PRIV@
@@ -603,11 +600,16 @@ PTHREAD_CC = @PTHREAD_CC@
 PTHREAD_CFLAGS = @PTHREAD_CFLAGS@
 PTHREAD_LIBS = @PTHREAD_LIBS@
 PWR8_CFLAGS = @PWR8_CFLAGS@
-PYTHON2 = @PYTHON2@
+PYTHON = @PYTHON@
+PYTHON_EXEC_PREFIX = @PYTHON_EXEC_PREFIX@
+PYTHON_PLATFORM = @PYTHON_PLATFORM@
+PYTHON_PREFIX = @PYTHON_PREFIX@
+PYTHON_VERSION = @PYTHON_VERSION@
 RADEON_CFLAGS = @RADEON_CFLAGS@
 RADEON_LIBS = @RADEON_LIBS@
 RANLIB = @RANLIB@
 RM = @RM@
+SCANNER_ARG = @SCANNER_ARG@
 SED = @SED@
 SELINUX_CFLAGS = @SELINUX_CFLAGS@
 SELINUX_LIBS = @SELINUX_LIBS@
@@ -727,10 +729,13 @@ mandir = @mandir@
 mkdir_p = @mkdir_p@
 oldincludedir = @oldincludedir@
 pdfdir = @pdfdir@
+pkgpyexecdir = @pkgpyexecdir@
+pkgpythondir = @pkgpythondir@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 psdir = @psdir@
-runstatedir = @runstatedir@
+pyexecdir = @pyexecdir@
+pythondir = @pythondir@
 sbindir = @sbindir@
 sharedstatedir = @sharedstatedir@
 srcdir = @srcdir@
@@ -855,8 +860,6 @@ i965_FILES = \
 	intel_tex_image.c \
 	intel_tex_obj.h \
 	intel_tex_validate.c \
-	intel_tiled_memcpy.c \
-	intel_tiled_memcpy.h \
 	intel_upload.c \
 	libdrm_macros.h
 
@@ -922,6 +925,7 @@ i965_oa_xml_FILES = \
 AM_CFLAGS = \
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/src/ \
+	-I$(top_builddir)/src/ \
 	-I$(top_srcdir)/src/mapi \
 	-I$(top_srcdir)/src/mesa/ \
 	-I$(top_srcdir)/src/gallium/include \
@@ -929,6 +933,8 @@ AM_CFLAGS = \
 	-I$(top_builddir)/src/util \
 	-I$(top_srcdir)/src/mesa/drivers/dri/common \
 	-I$(top_srcdir)/src/gtest/include \
+	-I$(top_builddir)/src/compiler \
+	-I$(top_srcdir)/src/compiler \
 	-I$(top_builddir)/src/compiler/glsl \
 	-I$(top_builddir)/src/compiler/nir \
 	-I$(top_srcdir)/src/compiler/nir \
@@ -1166,7 +1172,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/intel_tex_copy.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/intel_tex_image.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/intel_tex_validate.Plo@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/intel_tiled_memcpy.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/intel_upload.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libi965_gen10_la-genX_blorp_exec.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libi965_gen10_la-genX_state_upload.Plo@am__quote@ # am--include-marker
@@ -1599,7 +1604,6 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/intel_tex_copy.Plo
 	-rm -f ./$(DEPDIR)/intel_tex_image.Plo
 	-rm -f ./$(DEPDIR)/intel_tex_validate.Plo
-	-rm -f ./$(DEPDIR)/intel_tiled_memcpy.Plo
 	-rm -f ./$(DEPDIR)/intel_upload.Plo
 	-rm -f ./$(DEPDIR)/libi965_gen10_la-genX_blorp_exec.Plo
 	-rm -f ./$(DEPDIR)/libi965_gen10_la-genX_state_upload.Plo
@@ -1747,7 +1751,6 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/intel_tex_copy.Plo
 	-rm -f ./$(DEPDIR)/intel_tex_image.Plo
 	-rm -f ./$(DEPDIR)/intel_tex_validate.Plo
-	-rm -f ./$(DEPDIR)/intel_tiled_memcpy.Plo
 	-rm -f ./$(DEPDIR)/intel_upload.Plo
 	-rm -f ./$(DEPDIR)/libi965_gen10_la-genX_blorp_exec.Plo
 	-rm -f ./$(DEPDIR)/libi965_gen10_la-genX_state_upload.Plo
@@ -1807,7 +1810,7 @@ uninstall-am:
 
 
 brw_oa_metrics.c: brw_oa.py $(i965_oa_xml_FILES)
-	$(PYTHON2) $(PYTHON_FLAGS) $(srcdir)/brw_oa.py \
+	$(PYTHON) $(PYTHON_FLAGS) $(srcdir)/brw_oa.py \
 	--code=$(builddir)/brw_oa_metrics.c \
 	--header=$(builddir)/brw_oa_metrics.h \
 	$(i965_oa_xml_FILES:%=$(srcdir)/%)

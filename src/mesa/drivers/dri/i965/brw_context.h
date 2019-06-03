@@ -514,7 +514,7 @@ struct intel_batchbuffer {
    int exec_array_size;
 
    /** The amount of aperture space (in bytes) used by all exec_bos */
-   int aperture_space;
+   uint64_t aperture_space;
 
    struct {
       uint32_t *map_next;
@@ -752,6 +752,8 @@ struct brw_context
                                         struct brw_bo *bo,
                                         uint32_t offset_in_bytes,
                                         uint32_t report_id);
+
+      void (*emit_compute_walker)(struct brw_context *brw);
    } vtbl;
 
    struct brw_bufmgr *bufmgr;
@@ -796,6 +798,18 @@ struct brw_context
     */
    bool front_buffer_dirty;
 
+   /**
+    * True if the __DRIdrawable's current __DRIimageBufferMask is
+    * __DRI_IMAGE_BUFFER_SHARED.
+    */
+   bool is_shared_buffer_bound;
+
+   /**
+    * True if a shared buffer is bound and it has received any rendering since
+    * the previous __DRImutableRenderBufferLoaderExtension::displaySharedBuffer().
+    */
+   bool is_shared_buffer_dirty;
+
    /** Framerate throttling: @{ */
    struct brw_bo *throttle_batch[2];
 
@@ -819,7 +833,6 @@ struct brw_context
     * drirc options:
     * @{
     */
-   bool no_rast;
    bool always_flush_batch;
    bool always_flush_cache;
    bool disable_throttling;
@@ -830,6 +843,8 @@ struct brw_context
    /** @} */
 
    GLuint primitive; /**< Hardware primitive, such as _3DPRIM_TRILIST. */
+
+   bool object_preemption; /**< Object level preemption enabled. */
 
    GLenum reduced_primitive;
 
@@ -991,6 +1006,9 @@ struct brw_context
 
       /* High bits of the last seen index buffer address (for workarounds). */
       uint16_t last_bo_high_bits;
+
+      /* Used to understand is GPU state of primitive restart is up to date */
+      bool enable_cut_index;
    } ib;
 
    /* Active vertex program:
@@ -1366,13 +1384,6 @@ GLboolean brwCreateContext(gl_api api,
 /*======================================================================
  * brw_misc_state.c
  */
-void
-brw_meta_resolve_color(struct brw_context *brw,
-                       struct intel_mipmap_tree *mt);
-
-/*======================================================================
- * brw_misc_state.c
- */
 void brw_workaround_depthstencil_alignment(struct brw_context *brw,
                                            GLbitfield clear_mask);
 
@@ -1424,10 +1435,10 @@ void brw_load_register_imm32(struct brw_context *brw,
                              uint32_t reg, uint32_t imm);
 void brw_load_register_imm64(struct brw_context *brw,
                              uint32_t reg, uint64_t imm);
-void brw_load_register_reg(struct brw_context *brw, uint32_t src,
-                           uint32_t dest);
-void brw_load_register_reg64(struct brw_context *brw, uint32_t src,
-                             uint32_t dest);
+void brw_load_register_reg(struct brw_context *brw, uint32_t dst,
+                           uint32_t src);
+void brw_load_register_reg64(struct brw_context *brw, uint32_t dst,
+                             uint32_t src);
 void brw_store_data_imm32(struct brw_context *brw, struct brw_bo *bo,
                           uint32_t offset, uint32_t imm);
 void brw_store_data_imm64(struct brw_context *brw, struct brw_bo *bo,
@@ -1482,7 +1493,7 @@ gl_clip_plane *brw_select_clip_planes(struct gl_context *ctx);
 
 /* brw_draw_upload.c */
 unsigned brw_get_vertex_surface_type(struct brw_context *brw,
-                                     const struct gl_array_attributes *glattr);
+                                     const struct gl_vertex_format *glformat);
 
 static inline unsigned
 brw_get_index_type(unsigned index_size)

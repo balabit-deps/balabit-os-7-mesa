@@ -105,6 +105,8 @@ struct _egl_extensions
    EGLBoolean EXT_image_dma_buf_import;
    EGLBoolean EXT_image_dma_buf_import_modifiers;
    EGLBoolean EXT_pixel_format_float;
+   EGLBoolean EXT_surface_CTA861_3_metadata;
+   EGLBoolean EXT_surface_SMPTE2086_metadata;
    EGLBoolean EXT_swap_buffers_with_damage;
 
    unsigned int IMG_context_priority;
@@ -127,6 +129,7 @@ struct _egl_extensions
    EGLBoolean KHR_image;
    EGLBoolean KHR_image_base;
    EGLBoolean KHR_image_pixmap;
+   EGLBoolean KHR_mutable_render_buffer;
    EGLBoolean KHR_no_config_context;
    EGLBoolean KHR_partial_update;
    EGLBoolean KHR_reusable_sync;
@@ -135,6 +138,7 @@ struct _egl_extensions
 
    EGLBoolean MESA_drm_image;
    EGLBoolean MESA_image_dma_buf_export;
+   EGLBoolean MESA_query_driver;
 
    EGLBoolean NOK_swap_region;
    EGLBoolean NOK_texture_from_pixmap;
@@ -156,6 +160,7 @@ struct _egl_display
    _EGLPlatformType Platform; /**< The type of the platform display */
    void *PlatformDisplay;     /**< A pointer to the platform display */
 
+   _EGLDevice *Device;        /**< Device backing the display */
    _EGLDriver *Driver;        /**< Matched driver of the display */
    EGLBoolean Initialized;    /**< True if the display is initialized */
 

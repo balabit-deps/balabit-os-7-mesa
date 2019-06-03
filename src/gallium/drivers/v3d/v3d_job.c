@@ -47,8 +47,6 @@ remove_from_ht(struct hash_table *ht, void *key)
 static void
 v3d_job_free(struct v3d_context *v3d, struct v3d_job *job)
 {
-        struct set_entry *entry;
-
         set_foreach(job->bos, entry) {
                 struct v3d_bo *bo = (struct v3d_bo *)entry->key;
                 v3d_bo_unreference(&bo);
@@ -57,8 +55,6 @@ v3d_job_free(struct v3d_context *v3d, struct v3d_job *job)
         remove_from_ht(v3d->jobs, &job->key);
 
         if (job->write_prscs) {
-                struct set_entry *entry;
-
                 set_foreach(job->write_prscs, entry) {
                         const struct pipe_resource *prsc = entry->key;
 
@@ -66,7 +62,7 @@ v3d_job_free(struct v3d_context *v3d, struct v3d_job *job)
                 }
         }
 
-        for (int i = 0; i < VC5_MAX_DRAW_BUFFERS; i++) {
+        for (int i = 0; i < V3D_MAX_DRAW_BUFFERS; i++) {
                 if (job->cbufs[i]) {
                         remove_from_ht(v3d->write_jobs, job->cbufs[i]->texture);
                         pipe_surface_reference(&job->cbufs[i], NULL);
@@ -175,7 +171,6 @@ v3d_flush_jobs_reading_resource(struct v3d_context *v3d,
 
         v3d_flush_jobs_writing_resource(v3d, prsc);
 
-        struct hash_entry *entry;
         hash_table_foreach(v3d->jobs, entry) {
                 struct v3d_job *job = entry->data;
 
@@ -209,7 +204,7 @@ v3d_job_set_tile_buffer_size(struct v3d_job *job)
                 tile_size_index++;
 
         int max_bpp = RENDER_TARGET_MAXIMUM_32BPP;
-        for (int i = 0; i < VC5_MAX_DRAW_BUFFERS; i++) {
+        for (int i = 0; i < V3D_MAX_DRAW_BUFFERS; i++) {
                 if (job->cbufs[i]) {
                         struct v3d_surface *surf = v3d_surface(job->cbufs[i]);
                         max_bpp = MAX2(max_bpp, surf->internal_bpp);
@@ -227,7 +222,7 @@ v3d_job_set_tile_buffer_size(struct v3d_job *job)
 /**
  * Returns a v3d_job struture for tracking V3D rendering to a particular FBO.
  *
- * If we've already started rendering to this FBO, then return old same job,
+ * If we've already started rendering to this FBO, then return the same job,
  * otherwise make a new one.  If we're beginning rendering to an FBO, make
  * sure that any previous reads of the FBO (or writes to its color/Z surfaces)
  * have been flushed.
@@ -256,7 +251,7 @@ v3d_get_job(struct v3d_context *v3d,
          */
         struct v3d_job *job = v3d_job_create(v3d);
 
-        for (int i = 0; i < VC5_MAX_DRAW_BUFFERS; i++) {
+        for (int i = 0; i < V3D_MAX_DRAW_BUFFERS; i++) {
                 if (cbufs[i]) {
                         v3d_flush_jobs_reading_resource(v3d, cbufs[i]->texture);
                         pipe_surface_reference(&job->cbufs[i], cbufs[i]);
@@ -272,9 +267,7 @@ v3d_get_job(struct v3d_context *v3d,
                         job->msaa = true;
         }
 
-        v3d_job_set_tile_buffer_size(job);
-
-        for (int i = 0; i < VC5_MAX_DRAW_BUFFERS; i++) {
+        for (int i = 0; i < V3D_MAX_DRAW_BUFFERS; i++) {
                 if (cbufs[i])
                         _mesa_hash_table_insert(v3d->write_jobs,
                                                 cbufs[i]->texture, job);
@@ -307,6 +300,11 @@ v3d_get_job_for_fbo(struct v3d_context *v3d)
         struct pipe_surface **cbufs = v3d->framebuffer.cbufs;
         struct pipe_surface *zsbuf = v3d->framebuffer.zsbuf;
         struct v3d_job *job = v3d_get_job(v3d, cbufs, zsbuf);
+
+        if (v3d->framebuffer.samples >= 1)
+                job->msaa = true;
+
+        v3d_job_set_tile_buffer_size(job);
 
         /* The dirty flags are tracking what's been updated while v3d->job has
          * been bound, so set them all to ~0 when switching between jobs.  We
@@ -351,7 +349,6 @@ v3d_clif_dump(struct v3d_context *v3d, struct v3d_job *job)
                                                 stderr,
                                                 V3D_DEBUG & V3D_DEBUG_CL);
 
-        struct set_entry *entry;
         set_foreach(job->bos, entry) {
                 struct v3d_bo *bo = (void *)entry->key;
                 char *name = ralloc_asprintf(NULL, "%s_0x%x",
@@ -391,7 +388,15 @@ v3d_job_submit(struct v3d_context *v3d, struct v3d_job *job)
                         v3d33_bcl_epilogue(v3d, job);
         }
 
+        /* While the RCL will implicitly depend on the last RCL to have
+         * finished, we also need to block on any previous TFU job we may have
+         * dispatched.
+         */
+        job->submit.in_sync_rcl = v3d->out_sync;
+
+        /* Update the sync object for the last rendering by our context. */
         job->submit.out_sync = v3d->out_sync;
+
         job->submit.bcl_end = job->bcl.bo->offset + cl_offset(&job->bcl);
         job->submit.rcl_end = job->rcl.bo->offset + cl_offset(&job->rcl);
 
@@ -412,11 +417,7 @@ v3d_job_submit(struct v3d_context *v3d, struct v3d_job *job)
         if (!(V3D_DEBUG & V3D_DEBUG_NORAST)) {
                 int ret;
 
-#ifndef USE_V3D_SIMULATOR
-                ret = drmIoctl(v3d->fd, DRM_IOCTL_V3D_SUBMIT_CL, &job->submit);
-#else
-                ret = v3d_simulator_flush(v3d, &job->submit, job);
-#endif
+                ret = v3d_ioctl(v3d->fd, DRM_IOCTL_V3D_SUBMIT_CL, &job->submit);
                 static bool warned = false;
                 if (ret && !warned) {
                         fprintf(stderr, "Draw call returned %s.  "

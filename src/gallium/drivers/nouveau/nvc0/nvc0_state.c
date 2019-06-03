@@ -311,7 +311,7 @@ nvc0_rasterizer_state_create(struct pipe_context *pipe,
         SB_DATA    (so, fui(cso->offset_clamp));
     }
 
-    if (cso->depth_clip)
+    if (cso->depth_clip_near)
        reg = NVC0_3D_VIEW_VOLUME_CLIP_CTRL_UNK1_UNK1;
     else
        reg =
@@ -852,7 +852,9 @@ nvc0_set_framebuffer_state(struct pipe_context *pipe,
 
     util_copy_framebuffer_state(&nvc0->framebuffer, fb);
 
-    nvc0->dirty_3d |= NVC0_NEW_3D_FRAMEBUFFER | NVC0_NEW_3D_SAMPLE_LOCATIONS;
+    nvc0->dirty_3d |= NVC0_NEW_3D_FRAMEBUFFER | NVC0_NEW_3D_SAMPLE_LOCATIONS |
+       NVC0_NEW_3D_TEXTURES;
+    nvc0->dirty_cp |= NVC0_NEW_CP_TEXTURES;
 }
 
 static void

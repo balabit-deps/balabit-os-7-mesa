@@ -1,47 +1,302 @@
-mesa (18.2.8-0ubuntu0~18.04.2) bionic; urgency=medium
+mesa (19.0.2-1ubuntu1.1~18.04.1) bionic; urgency=medium
 
   * Backport to bionic.
 
- -- Timo Aaltonen <tjaalton@debian.org>  Sat, 09 Feb 2019 00:02:44 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Tue, 04 Jun 2019 00:10:13 +0300
 
-mesa (18.2.8-0ubuntu0~18.10.2) cosmic; urgency=medium
+mesa (19.0.2-1ubuntu1.1) disco; urgency=medium
 
-  * i965-revert-enabling-softpin.diff: Don't enable softpin, causes
-    issues on 32bit installs. (LP: #1815172)
+  * radeon-rework-gfx9-scissor-workaround.diff: Fix invisible elements
+    with GTK on Vega/Raven. (LP: #1831498)
 
- -- Timo Aaltonen <tjaalton@debian.org>  Fri, 08 Feb 2019 19:12:58 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Mon, 03 Jun 2019 23:52:07 +0300
 
-mesa (18.2.8-0ubuntu0~18.04.1) bionic; urgency=medium
+mesa (19.0.2-1ubuntu1~18.04.1) bionic; urgency=medium
 
-  * Backport to bionic.
-  * intel-whl-aml-cfl-ids.diff: Dropped, upstream.
+  * Backport to bionic for 18.04.3 HWE stack update. (LP: #1824111)
+  * control: Build-depend on libsensors4-dev.
 
- -- Timo Aaltonen <tjaalton@debian.org>  Thu, 10 Jan 2019 13:23:23 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 10 Apr 2019 13:00:48 +0300
 
-mesa (18.2.8-0ubuntu0~18.10.1) cosmic; urgency=medium
+mesa (19.0.2-1ubuntu1) disco; urgency=medium
 
-  * New upstream bugfix release. (LP: #1811225)
-    - add missing gpu-id's. (LP: #1789924)
-  * Cherry-picked from disco:
-    Move KHR/khrplatform.h from libegl1-mesa-dev to mesa-common-dev
+  * Merge from Debian.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 11 Apr 2019 11:56:22 +0300
+
+mesa (19.0.2-1) experimental; urgency=medium
+
+  * New upstream release.
+  * control: Bump libdrm-dev build-dep, amdgpu needs 2.4.97.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 11 Apr 2019 11:50:26 +0300
+
+mesa (19.0.1-1ubuntu2) disco; urgency=medium
+
+  * i965-comet-lake.diff: Add support for CML. (LP: #1821863)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 03 Apr 2019 10:58:06 +0300
+
+mesa (19.0.1-1ubuntu1) disco; urgency=medium
+
+  * Merge from Debian. (LP: #1822092)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 28 Mar 2019 15:51:31 +0200
+
+mesa (19.0.1-1) experimental; urgency=medium
+
+  * New upstream release.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 28 Mar 2019 15:38:58 +0200
+
+mesa (19.0.0-1ubuntu1) disco; urgency=medium
+
+  * Merge from Debian. (LP: #1818516)
+  * revert-set-full-thread-affinity.diff: Fix qemu crash. (LP: #1815889)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 14 Mar 2019 18:48:18 +0200
+
+mesa (19.0.0-1) experimental; urgency=medium
+
+  * New upstream release.
+  * meson-fix-with-dri2-def-for-hurd.diff: Restored the original diff to
+    fix hurd build.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 14 Mar 2019 18:41:31 +0200
+
+mesa (19.0.0~rc7-1) experimental; urgency=medium
+
+  * New upstream release candidate.
+  * Migrate to llvm/clang-8.
+  * fix-hurd-ftbfs.diff: Refreshed, and partially replaced by two
+    patches from upstream.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 07 Mar 2019 09:58:25 +0200
+
+mesa (19.0.0~rc6-1) experimental; urgency=medium
+
+  * New upstream release candidate. (LP: #1815236)
+  * rules: Replace imx with kmsro, fixes arm build.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Mon, 04 Mar 2019 09:26:07 +0200
+
+mesa (19.0.0~rc5-1) experimental; urgency=medium
+
+  * New upstream release candidate.
+  * libgbm1.symbols: Updated.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 20 Feb 2019 14:02:45 +0200
+
+mesa (19.0.0~rc2-1) experimental; urgency=medium
+
+  * New upstream snapshot.
+  * 1-5-meson-remove-duplicate-definition.patch: Dropped, upstream.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Fri, 08 Feb 2019 10:44:48 +0200
+
+mesa (18.3.4-2) unstable; urgency=medium
+
+  * Cherry-pick f6556ec7d12 (dri: meson: do not prefix user provided dri-
+    drivers-path) from upstream master branch. Fixes a regression since
+    switching to meson (Closes: #922807).
+  * rules: Add meson option -Db_ndebug=true to disable assertions
+    (Related bugs: #920462, #922162, #922346).
+  * source/local-options: Remove meson build files from extend-diff-
+    ignore.
+
+ -- Andreas Boll <aboll@debian.org>  Sat, 02 Mar 2019 13:21:59 +0100
+
+mesa (18.3.4-1ubuntu1) disco; urgency=medium
+
+  * Merge from Debian.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Tue, 19 Feb 2019 11:42:32 +0200
+
+mesa (18.3.4-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Tue, 19 Feb 2019 11:02:44 +0200
+
+mesa (18.3.3-1ubuntu1) disco; urgency=medium
+
+  * Merge from Debian.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 07 Feb 2019 16:41:47 +0200
+
+mesa (18.3.3-1) unstable; urgency=medium
+
+  [ James Clarke ]
+  * Add pkg.mesa.nolibva build profile; this breaks the mesa -> libva-dev ->
+    libva-glx1 -> libgl1-mesa-glx dependency loop when bootstrapping.
+    (Closes: #870434)
+
+  [ Timo Aaltonen ]
+  * New upstream release.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 06 Feb 2019 11:36:46 +0200
+
+mesa (18.3.2-1ubuntu1) disco; urgency=medium
+
+  * Merge from Debian.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Fri, 18 Jan 2019 11:39:28 +0200
+
+mesa (18.3.2-1) unstable; urgency=medium
+
+  * New upstream release.
+    - 2-5..5-5*.patch: Dropped, upstream.
+  * fix-hurd-ftbfs.diff: Add one more check for PIPE_OS_HURD, and fixes
+    from James Clarke to address other issues with the build.
+  * nv30: Cherry-pick patches to fix a plasmashell crash. (Closes:
+    #918835)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 17 Jan 2019 20:36:15 +0200
+
+mesa (18.3.1-1) experimental; urgency=medium
+
+  * New upstream release.
+  * fix-hurd-ftbfs.diff: Fix src/util build on Hurd.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Sat, 12 Jan 2019 20:02:51 +0200
+
+mesa (18.3.0-1) experimental; urgency=medium
+
+  [ Timo Aaltonen ]
+  * control, rules. LLVM is available on s390x these days, so simplify
+    the packaging and let s390x build the same package set as other release
+    archs.
+
+  [ Andreas Boll ]
+  * New upstream release.
+  * Use proposed meson patches from upstream to fix hurd and ppc64el.
+  * control: Bump meson build-dep to 0.45 per meson.build.
+  * control: Drop unused build-dep libtool.
+  * control: Switch to python3 build-deps.
+  * Inline debian/not-installed into debian/rules.
+  * rules: Tidy up override_dh_install.
+
+ -- Andreas Boll <aboll@debian.org>  Mon, 10 Dec 2018 22:52:55 +0100
+
+mesa (18.3.0~rc5-2) experimental; urgency=medium
+
+  * rules: Drop virgl, va/vdpau from s390x.
+  * meson-fix-hurd-build.diff: Hurd needs -D_GNU_SOURCE.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Mon, 03 Dec 2018 20:43:45 +0200
+
+mesa (18.3.0~rc5-1) experimental; urgency=medium
+
+  * New upstream release candidate.
+  * rules: Fix a typo in list of dri drivers.
+  * rules, meson-add-glx-direct-toggle.diff: Fix build on hurd.
+  * rules: Drop extra -Dosmesa from confflags.
+  * rules: Don't build gallium nouveau on s390x.
+  * rules: Classic osmesa needs classic swrast, and since it's not enabled
+    where llvmpipe is enabled, enable gallium osmesa there.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Fri, 30 Nov 2018 11:45:45 +0200
+
+mesa (18.3.0~rc4-1) experimental; urgency=medium
+
+  * New upstream release candidate.
+  * control: Bump libdrm-dev dependency to 2.4.95.
+  * libgl1-mesa-dri.install: Updated, etc/drirc is now
+    usr/share/drirc.d/00-mesa-defaults.conf.
+  * libegl-mesa0.symbols: Updated.
+  * Build with gcc8 again.
+  * control, rules: Build with meson.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 29 Nov 2018 15:35:41 +0200
+
+mesa (18.2.8-2ubuntu1) disco; urgency=medium
+
+  * Merge from Debian.
+    - Re-enable libsensors support
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 03 Jan 2019 02:50:15 +0200
+
+mesa (18.2.8-2) unstable; urgency=medium
+
+  * Actually merge the upstream version. (Closes: #917556)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Fri, 28 Dec 2018 20:11:40 +0200
+
+mesa (18.2.8-1) unstable; urgency=medium
+
+  * New upstream release.
+  * control: Build-depend on libsensors-dev. (Closes: #917442)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Fri, 28 Dec 2018 10:50:13 +0200
+
+mesa (18.2.7-2) unstable; urgency=medium
+
+  * Temporarily disable libsensors support to bootstrap with libsensors5.
+
+ -- Emilio Pozuelo Monfort <pochu@debian.org>  Fri, 21 Dec 2018 09:22:16 +0100
+
+mesa (18.2.7-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 19 Dec 2018 11:47:32 +0200
+
+mesa (18.2.6-1ubuntu2) disco; urgency=medium
+
+  * Temporarily disable libsensors support to bootstrap with libsensors5.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 03 Jan 2019 02:34:40 +0200
+
+mesa (18.2.6-1ubuntu1) disco; urgency=medium
+
+  * Merge from Debian.
+    - add missing i965 pci-id's (LP: #1789924)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 28 Nov 2018 23:14:08 +0200
+
+mesa (18.2.6-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 28 Nov 2018 22:58:22 +0200
+
+mesa (18.2.5-3) unstable; urgency=medium
+
+  [ Michael Biebl ]
+  * Force compilation against gcc-7, gcc-8 miscompiles mesa
+    See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=87859
+    (Closes: #914267).
+
+ -- Andreas Boll <aboll@debian.org>  Thu, 22 Nov 2018 21:18:39 +0100
+
+mesa (18.2.5-2) unstable; urgency=medium
+
+  * Move KHR/khrplatform.h from libegl1-mesa-dev to mesa-common-dev
     because GL/glcorearb.h and GL/glext.h started to depend on this
     header too (Closes: #914167).
 
- -- Timo Aaltonen <tjaalton@debian.org>  Thu, 10 Jan 2019 12:02:03 +0200
+ -- Andreas Boll <aboll@debian.org>  Tue, 20 Nov 2018 21:20:51 +0100
 
-mesa (18.2.2-0ubuntu1~18.04.2) bionic; urgency=medium
+mesa (18.2.5-1) unstable; urgency=medium
 
-  * i965-revert-enabling-softpin.diff: Don't enable softpin, causes
-    issues on 32bit installs. (LP: #1815172)
+  * New upstream release.
 
- -- Timo Aaltonen <tjaalton@debian.org>  Fri, 08 Feb 2019 19:12:58 +0200
+ -- Andreas Boll <aboll@debian.org>  Mon, 19 Nov 2018 16:18:34 +0100
 
-mesa (18.2.2-0ubuntu1~18.04.1) bionic; urgency=medium
+mesa (18.2.4-1) experimental; urgency=medium
 
-  * Backport for 18.04.2 HWE stack update. (LP: #1798597)
-  * intel-whl-aml-cfl-ids.diff: Add missing i965 pci-id's (LP: #1789924)
+  [ Andreas Boll ]
+  * New upstream release.
+    - vulkan: Disable randr lease for libxcb < 1.13 (Closes: #908827,
+    #909720).
+  * Drop version from build-deps libxcb-dri3-dev and libxcb-present-dev.
+  * Bump libdrm-dev dependency to 2.4.92.
+  * Enable building etnaviv and imx on arm64 (Closes: #907136).
 
- -- Timo Aaltonen <tjaalton@debian.org>  Thu, 29 Nov 2018 00:09:03 +0200
+  [ Timo Aaltonen ]
+  * copyright: Rewrite for format 1.0.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 15 Nov 2018 11:20:08 +0200
 
 mesa (18.2.2-0ubuntu1) cosmic; urgency=medium
 
@@ -99,6 +354,15 @@ mesa (18.2.0~rc4-1) experimental; urgency=medium
     depends.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Wed, 22 Aug 2018 19:59:55 +0300
+
+mesa (18.1.9-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Cherry-pick 2f1ad72ac17 (clover: Add explicit virtual destructor to
+    argument class) from upstream master branch. Fixes memory leaks with
+    some OpenCL apps (Closes: #909741). Thanks, David Kuehling!
+
+ -- Andreas Boll <aboll@debian.org>  Wed, 10 Oct 2018 16:54:18 +0200
 
 mesa (18.1.8-1) unstable; urgency=medium
 

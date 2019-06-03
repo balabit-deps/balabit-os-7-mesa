@@ -1,5 +1,3 @@
-/* -*- mode: C; c-file-style: "k&r"; tab-width 4; indent-tabs-mode: t; -*- */
-
 /*
  * Copyright (C) 2012 Rob Clark <robclark@freedesktop.org>
  *
@@ -211,7 +209,11 @@ fd_set_framebuffer_state(struct pipe_context *pctx,
 	struct fd_context *ctx = fd_context(pctx);
 	struct pipe_framebuffer_state *cso;
 
-	cso = &ctx->batch->framebuffer;
+	DBG("%ux%u, %u layers, %u samples",
+		framebuffer->width, framebuffer->height,
+		framebuffer->layers, framebuffer->samples);
+
+	cso = &ctx->framebuffer;
 
 	if (util_framebuffer_state_equal(cso, framebuffer))
 		return;
@@ -221,17 +223,14 @@ fd_set_framebuffer_state(struct pipe_context *pctx,
 	cso->samples = util_framebuffer_get_num_samples(cso);
 
 	if (ctx->screen->reorder) {
-		struct fd_batch *batch, *old_batch = NULL;
+		struct fd_batch *old_batch = NULL;
 
 		fd_batch_reference(&old_batch, ctx->batch);
 
 		if (likely(old_batch))
 			fd_batch_set_stage(old_batch, FD_STAGE_NULL);
 
-		batch = fd_batch_from_fb(&ctx->screen->batch_cache, ctx, framebuffer);
 		fd_batch_reference(&ctx->batch, NULL);
-		fd_reset_wfi(batch);
-		ctx->batch = batch;
 		fd_context_all_dirty(ctx);
 
 		if (old_batch && old_batch->blit && !old_batch->back_blit) {
@@ -289,7 +288,36 @@ fd_set_viewport_states(struct pipe_context *pctx,
 		const struct pipe_viewport_state *viewport)
 {
 	struct fd_context *ctx = fd_context(pctx);
+	struct pipe_scissor_state *scissor = &ctx->viewport_scissor;
+	float minx, miny, maxx, maxy;
+
 	ctx->viewport = *viewport;
+
+	/* see si_get_scissor_from_viewport(): */
+
+	/* Convert (-1, -1) and (1, 1) from clip space into window space. */
+	minx = -viewport->scale[0] + viewport->translate[0];
+	miny = -viewport->scale[1] + viewport->translate[1];
+	maxx = viewport->scale[0] + viewport->translate[0];
+	maxy = viewport->scale[1] + viewport->translate[1];
+
+	/* Handle inverted viewports. */
+	if (minx > maxx) {
+		swap(minx, maxx);
+	}
+	if (miny > maxy) {
+		swap(miny, maxy);
+	}
+
+	debug_assert(miny >= 0);
+	debug_assert(maxy >= 0);
+
+	/* Convert to integer and round up the max bounds. */
+	scissor->minx = minx;
+	scissor->miny = miny;
+	scissor->maxx = ceilf(maxx);
+	scissor->maxy = ceilf(maxy);
+
 	ctx->dirty |= FD_DIRTY_VIEWPORT;
 }
 

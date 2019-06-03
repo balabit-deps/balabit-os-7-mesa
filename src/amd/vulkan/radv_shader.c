@@ -71,7 +71,6 @@ static const struct nir_shader_compiler_options nir_options = {
 	.lower_extract_word = true,
 	.lower_ffma = true,
 	.lower_fpow = true,
-	.vs_inputs_dual_locations = true,
 	.max_unroll_iterations = 32
 };
 
@@ -119,15 +118,32 @@ void radv_DestroyShaderModule(
 }
 
 void
-radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively)
+radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively,
+                  bool allow_copies)
 {
         bool progress;
 
         do {
                 progress = false;
 
+		NIR_PASS(progress, shader, nir_split_array_vars, nir_var_function_temp);
+		NIR_PASS(progress, shader, nir_shrink_vec_array_vars, nir_var_function_temp);
+
                 NIR_PASS_V(shader, nir_lower_vars_to_ssa);
 		NIR_PASS_V(shader, nir_lower_pack);
+
+		if (allow_copies) {
+			/* Only run this pass in the first call to
+			 * radv_optimize_nir.  Later calls assume that we've
+			 * lowered away any copy_deref instructions and we
+			 *  don't want to introduce any more.
+			*/
+			NIR_PASS(progress, shader, nir_opt_find_array_copies);
+		}
+
+		NIR_PASS(progress, shader, nir_opt_copy_prop_vars);
+		NIR_PASS(progress, shader, nir_opt_dead_write_vars);
+
                 NIR_PASS_V(shader, nir_lower_alu_to_scalar);
                 NIR_PASS_V(shader, nir_lower_phis_to_scalar);
 
@@ -143,7 +159,7 @@ radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively)
                 NIR_PASS(progress, shader, nir_opt_if);
                 NIR_PASS(progress, shader, nir_opt_dead_cf);
                 NIR_PASS(progress, shader, nir_opt_cse);
-                NIR_PASS(progress, shader, nir_opt_peephole_select, 8);
+                NIR_PASS(progress, shader, nir_opt_peephole_select, 8, true);
                 NIR_PASS(progress, shader, nir_opt_algebraic);
                 NIR_PASS(progress, shader, nir_opt_constant_folding);
                 NIR_PASS(progress, shader, nir_opt_undef);
@@ -173,7 +189,7 @@ radv_shader_compile_to_nir(struct radv_device *device,
 		 * and just use the NIR shader */
 		nir = module->nir;
 		nir->options = &nir_options;
-		nir_validate_shader(nir);
+		nir_validate_shader(nir, "in internal shader");
 
 		assert(exec_list_length(&nir->functions) == 1);
 		struct exec_node *node = exec_list_get_head(&nir->functions);
@@ -203,29 +219,39 @@ radv_shader_compile_to_nir(struct radv_device *device,
 			}
 		}
 		const struct spirv_to_nir_options spirv_options = {
+			.lower_ubo_ssbo_access_to_offsets = true,
 			.caps = {
+				.descriptor_array_dynamic_indexing = true,
 				.device_group = true,
 				.draw_parameters = true,
 				.float64 = true,
+				.gcn_shader = true,
+				.geometry_streams = true,
 				.image_read_without_format = true,
 				.image_write_without_format = true,
-				.tessellation = true,
+				.int16 = true,
 				.int64 = true,
 				.multiview = true,
+				.runtime_descriptor_array = true,
+				.shader_viewport_index_layer = true,
+				.stencil_export = true,
+				.storage_16bit = true,
+				.storage_image_ms = true,
+				.subgroup_arithmetic = true,
 				.subgroup_ballot = true,
 				.subgroup_basic = true,
 				.subgroup_quad = true,
 				.subgroup_shuffle = true,
 				.subgroup_vote = true,
-				.variable_pointers = true,
-				.gcn_shader = true,
+				.tessellation = true,
+				.transform_feedback = true,
 				.trinary_minmax = true,
-				.shader_viewport_index_layer = true,
-				.descriptor_array_dynamic_indexing = true,
-				.runtime_descriptor_array = true,
-				.stencil_export = true,
-				.storage_16bit = true,
+				.variable_pointers = true,
 			},
+			.ubo_ptr_type = glsl_vector_type(GLSL_TYPE_UINT, 2),
+			.ssbo_ptr_type = glsl_vector_type(GLSL_TYPE_UINT, 2),
+			.push_const_ptr_type = glsl_uint_type(),
+			.shared_ptr_type = glsl_uint_type(),
 		};
 		entry_point = spirv_to_nir(spirv, module->size / 4,
 					   spec_entries, num_spec_entries,
@@ -233,7 +259,7 @@ radv_shader_compile_to_nir(struct radv_device *device,
 					   &spirv_options, &nir_options);
 		nir = entry_point->shader;
 		assert(nir->info.stage == stage);
-		nir_validate_shader(nir);
+		nir_validate_shader(nir, "after spirv_to_nir");
 
 		free(spec_entries);
 
@@ -241,10 +267,10 @@ radv_shader_compile_to_nir(struct radv_device *device,
 		 * inline functions.  That way they get properly initialized at the top
 		 * of the function and not at the top of its caller.
 		 */
-		NIR_PASS_V(nir, nir_lower_constant_initializers, nir_var_local);
+		NIR_PASS_V(nir, nir_lower_constant_initializers, nir_var_function_temp);
 		NIR_PASS_V(nir, nir_lower_returns);
 		NIR_PASS_V(nir, nir_inline_functions);
-		NIR_PASS_V(nir, nir_copy_prop);
+		NIR_PASS_V(nir, nir_opt_deref);
 
 		/* Pick off the single entrypoint that we want */
 		foreach_list_typed_safe(nir_function, func, node, &nir->functions) {
@@ -301,10 +327,9 @@ radv_shader_compile_to_nir(struct radv_device *device,
 	}
 
 	nir_split_var_copies(nir);
-	nir_lower_var_copies(nir);
 
 	nir_lower_global_vars_to_local(nir);
-	nir_remove_dead_variables(nir, nir_var_local);
+	nir_remove_dead_variables(nir, nir_var_function_temp);
 	nir_lower_subgroups(nir, &(struct nir_lower_subgroups_options) {
 			.subgroup_size = 64,
 			.ballot_bit_size = 64,
@@ -315,8 +340,15 @@ radv_shader_compile_to_nir(struct radv_device *device,
 			.lower_vote_eq_to_ballot = 1,
 		});
 
+	nir_lower_load_const_to_scalar(nir);
+
 	if (!(flags & VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT))
-		radv_optimize_nir(nir, false);
+		radv_optimize_nir(nir, false, true);
+
+	/* We call nir_lower_var_copies() after the first radv_optimize_nir()
+	 * to remove any copies introduced by nir_opt_find_array_copies().
+	 */
+	nir_lower_var_copies(nir);
 
 	/* Indirect lowering must be called after the radv_optimize_nir() loop
 	 * has been called at least once. Otherwise indirect lowering can
@@ -324,7 +356,7 @@ radv_shader_compile_to_nir(struct radv_device *device,
 	 * considered too large for unrolling.
 	 */
 	ac_lower_indirect_derefs(nir, device->physical_device->rad_info.chip_class);
-	radv_optimize_nir(nir, flags & VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT);
+	radv_optimize_nir(nir, flags & VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT, false);
 
 	return nir;
 }
@@ -363,7 +395,8 @@ radv_alloc_shader_memory(struct radv_device *device,
 	                                     RADEON_DOMAIN_VRAM,
 					     RADEON_FLAG_NO_INTERPROCESS_SHARING |
 					     (device->physical_device->cpdma_prefetch_writes_memory ?
-					             0 : RADEON_FLAG_READ_ONLY));
+					             0 : RADEON_FLAG_READ_ONLY),
+					     RADV_BO_PRIORITY_SHADER);
 	slab->ptr = (char*)device->ws->buffer_map(slab->bo);
 	list_inithead(&slab->shaders);
 
@@ -410,7 +443,12 @@ radv_fill_shader_variant(struct radv_device *device,
 	variant->code_size = radv_get_shader_binary_size(binary);
 	variant->rsrc2 = S_00B12C_USER_SGPR(variant->info.num_user_sgprs) |
 			 S_00B12C_USER_SGPR_MSB(variant->info.num_user_sgprs >> 5) |
-			 S_00B12C_SCRATCH_EN(scratch_enabled);
+			 S_00B12C_SCRATCH_EN(scratch_enabled) |
+			 S_00B12C_SO_BASE0_EN(!!info->so.strides[0]) |
+			 S_00B12C_SO_BASE1_EN(!!info->so.strides[1]) |
+			 S_00B12C_SO_BASE2_EN(!!info->so.strides[2]) |
+			 S_00B12C_SO_BASE3_EN(!!info->so.strides[3]) |
+			 S_00B12C_SO_EN(!!info->so.num_outputs);
 
 	variant->rsrc1 = S_00B848_VGPRS((variant->config.num_vgprs - 1) / 4) |
 		S_00B848_SGPRS((variant->config.num_sgprs - 1) / 8) |
@@ -517,9 +555,15 @@ static void radv_init_llvm_target()
 	 *
 	 * "mesa" is the prefix for error messages.
 	 */
-	const char *argv[3] = { "mesa", "-simplifycfg-sink-common=false",
-				"-amdgpu-skip-threshold=1" };
-	LLVMParseCommandLineOptions(3, argv, NULL);
+	if (HAVE_LLVM >= 0x0800) {
+		const char *argv[2] = { "mesa", "-simplifycfg-sink-common=false" };
+		LLVMParseCommandLineOptions(2, argv, NULL);
+
+	} else {
+		const char *argv[3] = { "mesa", "-simplifycfg-sink-common=false",
+					"-amdgpu-skip-threshold=1" };
+		LLVMParseCommandLineOptions(3, argv, NULL);
+	}
 }
 
 static once_flag radv_init_llvm_target_once_flag = ONCE_FLAG_INIT;
@@ -569,7 +613,7 @@ shader_variant_create(struct radv_device *device,
 
 	thread_compiler = !(device->instance->debug_flags & RADV_DEBUG_NOTHREADLLVM);
 	radv_init_llvm_once();
-	radv_init_llvm_compiler(&ac_llvm, false,
+	radv_init_llvm_compiler(&ac_llvm,
 				thread_compiler,
 				chip_family, tm_options);
 	if (gs_copy_shader) {
@@ -829,6 +873,7 @@ radv_GetShaderInfoAMD(VkDevice _device,
 		buf = _mesa_string_buffer_create(NULL, 1024);
 
 		_mesa_string_buffer_printf(buf, "%s:\n", radv_get_shader_name(variant, stage));
+		_mesa_string_buffer_printf(buf, "%s\n\n", variant->llvm_ir_string);
 		_mesa_string_buffer_printf(buf, "%s\n\n", variant->disasm_string);
 		generate_shader_stats(device, variant, stage, buf);
 

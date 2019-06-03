@@ -213,6 +213,9 @@ struct gl_config
 
    /* EXT_framebuffer_sRGB */
    GLint sRGBCapable;
+
+   /* EGL_KHR_mutable_render_buffer */
+   GLuint mutableRenderBuffer; /* bool */
 };
 
 
@@ -450,6 +453,21 @@ struct gl_colorbuffer_attrib
    GLenum16 ClampReadColor;     /**< GL_TRUE, GL_FALSE or GL_FIXED_ONLY_ARB */
 
    GLboolean sRGBEnabled;  /**< Framebuffer sRGB blending/updating requested */
+};
+
+
+/**
+ * Vertex format to describe a vertex element.
+ */
+struct gl_vertex_format
+{
+   GLenum16 Type;        /**< datatype: GL_FLOAT, GL_INT, etc */
+   GLenum16 Format;      /**< default: GL_RGBA, but may be GL_BGRA */
+   GLubyte Size:5;       /**< components per element (1,2,3,4) */
+   GLubyte Normalized:1; /**< GL_ARB_vertex_program */
+   GLubyte Integer:1;    /**< Integer-valued? */
+   GLubyte Doubles:1;    /**< double values are not converted to floats */
+   GLubyte _ElementSize; /**< Size of each element in bytes */
 };
 
 
@@ -1279,7 +1297,8 @@ struct gl_transform_attrib
    GLboolean Normalize;				/**< Normalize all normals? */
    GLboolean RescaleNormals;			/**< GL_EXT_rescale_normal */
    GLboolean RasterPositionUnclipped;           /**< GL_IBM_rasterpos_clip */
-   GLboolean DepthClamp;			/**< GL_ARB_depth_clamp */
+   GLboolean DepthClampNear;			/**< GL_AMD_depth_clamp_separate */
+   GLboolean DepthClampFar;			/**< GL_AMD_depth_clamp_separate */
    /** GL_ARB_clip_control */
    GLenum16 ClipOrigin;   /**< GL_LOWER_LEFT or GL_UPPER_LEFT */
    GLenum16 ClipDepthMode;/**< GL_NEGATIVE_ONE_TO_ONE or GL_ZERO_TO_ONE */
@@ -1415,17 +1434,12 @@ struct gl_array_attributes
    const GLubyte *Ptr;
    /** Offset of the first element relative to the binding offset */
    GLuint RelativeOffset;
-   GLshort Stride;          /**< Stride as specified with gl*Pointer() */
-   GLenum16 Type;           /**< Datatype: GL_FLOAT, GL_INT, etc */
-   GLenum16 Format;         /**< Default: GL_RGBA, but may be GL_BGRA */
-   GLboolean Enabled;       /**< Whether the array is enabled */
-   GLubyte Size;            /**< Components per element (1,2,3,4) */
-   unsigned Normalized:1;   /**< Fixed-point values are normalized when converted to floats */
-   unsigned Integer:1;      /**< Fixed-point values are not converted to floats */
-   unsigned Doubles:1;      /**< double precision values are not converted to floats */
-   unsigned _ElementSize:8; /**< Size of each element in bytes */
+   /** Vertex format */
+   struct gl_vertex_format Format;
+   /** Stride as specified with gl*Pointer() */
+   GLshort Stride;
    /** Index into gl_vertex_array_object::BufferBinding[] array */
-   unsigned BufferBindingIndex:6;
+   GLubyte BufferBindingIndex;
 
    /**
     * Derived effective buffer binding index
@@ -1440,7 +1454,7 @@ struct gl_array_attributes
     * Note that _mesa_update_vao_derived_arrays is called when binding
     * the VAO to Array._DrawVAO.
     */
-   unsigned _EffBufferBindingIndex:6;
+   GLubyte _EffBufferBindingIndex;
    /**
     * Derived effective relative offset.
     *
@@ -1534,7 +1548,7 @@ struct gl_vertex_array_object
    GLbitfield VertexAttribBufferMask;
 
    /** Mask of VERT_BIT_* values indicating which arrays are enabled */
-   GLbitfield _Enabled;
+   GLbitfield Enabled;
 
    /**
     * Mask of VERT_BIT_* enabled arrays past position/generic0 mapping
@@ -2010,7 +2024,9 @@ struct gl_bindless_image
    /** Whether this bindless image is bound to a unit. */
    GLboolean bound;
 
-   /** Access qualifier (GL_READ_WRITE, GL_READ_ONLY, GL_WRITE_ONLY) */
+   /** Access qualifier (GL_READ_WRITE, GL_READ_ONLY, GL_WRITE_ONLY, or
+    * GL_NONE to indicate both read-only and write-only)
+    */
    GLenum16 access;
 
    /** Pointer to the base of the data. */
@@ -2060,6 +2076,21 @@ struct gl_program
    /** Is this program written to on disk shader cache */
    bool program_written_to_cache;
 
+   /** A bitfield indicating which vertex shader inputs consume two slots
+    *
+    * This is used for mapping from single-slot input locations in the GL API
+    * to dual-slot double input locations in the shader.  This field is set
+    * once as part of linking and never updated again to ensure the mapping
+    * remains consistent.
+    *
+    * Note: There may be dual-slot variables in the original shader source
+    * which do not appear in this bitfield due to having been eliminated by
+    * the compiler prior to DualSlotInputs being calculated.  There may also
+    * be bits set in this bitfield which are set but which the shader never
+    * reads due to compiler optimizations eliminating such variables after
+    * DualSlotInputs is calculated.
+    */
+   GLbitfield64 DualSlotInputs;
    /** Subset of OutputsWritten outputs written with non-zero index. */
    GLbitfield64 SecondaryOutputsWritten;
    /** TEXTURE_x_BIT bitmask */
@@ -2127,8 +2158,9 @@ struct gl_program
 
          /**
           * Access qualifier specified in the shader for each image uniform
-          * index.  Either \c GL_READ_ONLY, \c GL_WRITE_ONLY or \c
-          * GL_READ_WRITE.
+          * index.  Either \c GL_READ_ONLY, \c GL_WRITE_ONLY, \c
+          * GL_READ_WRITE, or \c GL_NONE to indicate both read-only and
+          * write-only.
           *
           * It may be different, though only more strict than the value of
           * \c gl_image_unit::Access for the corresponding image unit.
@@ -2448,7 +2480,7 @@ struct gl_shader_info
       GLint VerticesOut;
       /**
        * 0 - Invocations count not declared in shader, or
-       * 1 .. MAX_GEOMETRY_SHADER_INVOCATIONS
+       * 1 .. Const.MaxGeometryShaderInvocations
        */
       GLint Invocations;
       /**
@@ -2544,8 +2576,7 @@ enum gl_compile_status
 {
    COMPILE_FAILURE = 0,
    COMPILE_SUCCESS,
-   COMPILE_SKIPPED,
-   COMPILED_NO_OPTS
+   COMPILE_SKIPPED
 };
 
 /**
@@ -3336,6 +3367,7 @@ struct gl_renderbuffer
     */
    GLboolean NeedsFinishRenderTexture;
    GLubyte NumSamples;    /**< zero means not multisampled */
+   GLubyte NumStorageSamples; /**< for AMD_framebuffer_multisample_advanced */
    GLenum16 InternalFormat; /**< The user-specified format */
    GLenum16 _BaseFormat;    /**< Either GL_RGB, GL_RGBA, GL_DEPTH_COMPONENT or
                                GL_STENCIL_INDEX. */
@@ -3381,6 +3413,7 @@ struct gl_renderbuffer_attachment
     */
    struct gl_texture_object *Texture;
    GLuint TextureLevel; /**< Attached mipmap level. */
+   GLsizei NumSamples;  /**< from FramebufferTexture2DMultisampleEXT */
    GLuint CubeMapFace;  /**< 0 .. 5, for cube map textures. */
    GLuint Zoffset;      /**< Slice for 3D textures,  or layer for both 1D
                          * and 2D array textures */
@@ -3472,6 +3505,7 @@ struct gl_framebuffer
    bool _HasAttachments;
 
    GLbitfield _IntegerBuffers;  /**< Which color buffers are integer valued */
+   GLbitfield _RGBBuffers;  /**< Which color buffers have baseformat == RGB */
 
    /* ARB_color_buffer_float */
    GLboolean _AllColorBuffersFixedPoint; /* no integer, no float */
@@ -3583,7 +3617,7 @@ struct gl_program_constants
    struct gl_precision LowInt, MediumInt, HighInt;
    /* GL_ARB_uniform_buffer_object */
    GLuint MaxUniformBlocks;
-   GLuint MaxCombinedUniformComponents;
+   uint64_t MaxCombinedUniformComponents;
    GLuint MaxTextureImageUnits;
 
    /* GL_ARB_shader_atomic_counters */
@@ -3709,6 +3743,7 @@ struct gl_constants
    /** geometry shader */
    GLuint MaxGeometryOutputVertices;
    GLuint MaxGeometryTotalOutputComponents;
+   GLuint MaxGeometryShaderInvocations;
 
    GLuint GLSLVersion;  /**< Desktop GLSL version supported (ex: 120 = 1.20) */
    GLuint GLSLVersionCompat;  /**< Desktop compat GLSL version supported  */
@@ -3758,6 +3793,11 @@ struct gl_constants
     * features are unimplemented and might not work correctly.
     */
    GLboolean AllowHigherCompatVersion;
+
+   /**
+    * Allow layout qualifiers on function parameters.
+    */
+   GLboolean AllowLayoutQualifiersOnFunctionParameters;
 
    /**
     * Force computing the absolute value for sqrt() and inversesqrt() to follow
@@ -3936,6 +3976,21 @@ struct gl_constants
    GLint MaxColorTextureSamples;
    GLint MaxDepthTextureSamples;
    GLint MaxIntegerSamples;
+
+   /** GL_AMD_framebuffer_multisample_advanced */
+   GLint MaxColorFramebufferSamples;
+   GLint MaxColorFramebufferStorageSamples;
+   GLint MaxDepthStencilFramebufferSamples;
+
+   /* An array of supported MSAA modes allowing different sample
+    * counts per attachment type.
+    */
+   struct {
+      GLint NumColorSamples;
+      GLint NumColorStorageSamples;
+      GLint NumDepthStencilSamples;
+   } SupportedMultisampleModes[40];
+   GLint NumSupportedMultisampleModes;
 
    /**
     * GL_EXT_texture_multisample_blit_scaled implementation assumes that
@@ -4200,14 +4255,17 @@ struct gl_extensions
    GLboolean EXT_gpu_shader4;
    GLboolean EXT_memory_object;
    GLboolean EXT_memory_object_fd;
+   GLboolean EXT_multisampled_render_to_texture;
    GLboolean EXT_packed_float;
    GLboolean EXT_pixel_buffer_object;
    GLboolean EXT_point_parameters;
    GLboolean EXT_provoking_vertex;
+   GLboolean EXT_render_snorm;
    GLboolean EXT_semaphore;
    GLboolean EXT_semaphore_fd;
    GLboolean EXT_shader_integer_mix;
    GLboolean EXT_shader_samples_identical;
+   GLboolean EXT_sRGB;
    GLboolean EXT_stencil_two_side;
    GLboolean EXT_texture_array;
    GLboolean EXT_texture_compression_latc;
@@ -4219,6 +4277,7 @@ struct gl_extensions
    GLboolean EXT_texture_shared_exponent;
    GLboolean EXT_texture_snorm;
    GLboolean EXT_texture_sRGB;
+   GLboolean EXT_texture_sRGB_R8;
    GLboolean EXT_texture_sRGB_decode;
    GLboolean EXT_texture_swizzle;
    GLboolean EXT_texture_type_2_10_10_10_REV;
@@ -4235,6 +4294,8 @@ struct gl_extensions
    GLboolean OES_texture_view;
    GLboolean OES_viewport_array;
    /* vendor extensions */
+   GLboolean AMD_framebuffer_multisample_advanced;
+   GLboolean AMD_depth_clamp_separate;
    GLboolean AMD_performance_monitor;
    GLboolean AMD_pinned_memory;
    GLboolean AMD_seamless_cubemap_per_texture;
@@ -4250,6 +4311,7 @@ struct gl_extensions
    GLboolean GREMEDY_string_marker;
    GLboolean INTEL_conservative_rasterization;
    GLboolean INTEL_performance_query;
+   GLboolean INTEL_shader_atomic_float_minmax;
    GLboolean KHR_blend_equation_advanced;
    GLboolean KHR_blend_equation_advanced_coherent;
    GLboolean KHR_robustness;
@@ -4268,6 +4330,7 @@ struct gl_extensions
    GLboolean NV_fog_distance;
    GLboolean NV_point_sprite;
    GLboolean NV_primitive_restart;
+   GLboolean NV_shader_atomic_float;
    GLboolean NV_texture_barrier;
    GLboolean NV_texture_env_combine4;
    GLboolean NV_texture_rectangle;

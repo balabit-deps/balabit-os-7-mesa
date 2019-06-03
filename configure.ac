@@ -52,6 +52,19 @@ mingw*)
     ;;
 esac
 
+AC_ARG_ENABLE(autotools,
+   [AS_HELP_STRING([--enable-autotools],
+                   [Enable the use of this autotools based build configuration])],
+   [enable_autotools=$enableval], [enable_autotools=no])
+
+if test "x$enable_autotools" != "xyes" ; then
+    AC_MSG_ERROR([the autotools build system has been deprecated in favour of
+    meson and will be removed eventually. For instructions on how to use meson
+    see https://www.mesa3d.org/meson.html.
+    If you still want to use the autotools build, then add --enable-autotools
+    to the configure command line.])
+fi
+
 # Support silent build rules, requires at least automake-1.11. Disable
 # by either passing --disable-silent-rules to configure or passing V=1
 # to make
@@ -74,11 +87,10 @@ AC_SUBST([OPENCL_VERSION])
 # in the first entry.
 LIBDRM_REQUIRED=2.4.75
 LIBDRM_RADEON_REQUIRED=2.4.71
-LIBDRM_AMDGPU_REQUIRED=2.4.91
+LIBDRM_AMDGPU_REQUIRED=2.4.97
 LIBDRM_INTEL_REQUIRED=2.4.75
 LIBDRM_NVVIEUX_REQUIRED=2.4.66
 LIBDRM_NOUVEAU_REQUIRED=2.4.66
-LIBDRM_FREEDRENO_REQUIRED=2.4.92
 LIBDRM_ETNAVIV_REQUIRED=2.4.89
 LIBDRM_VC4_REQUIRED=2.4.89
 
@@ -108,9 +120,9 @@ dnl LLVM versions
 LLVM_REQUIRED_GALLIUM=3.3.0
 LLVM_REQUIRED_OPENCL=3.9.0
 LLVM_REQUIRED_R600=3.9.0
-LLVM_REQUIRED_RADEONSI=5.0.0
-LLVM_REQUIRED_RADV=5.0.0
-LLVM_REQUIRED_SWR=5.0.0
+LLVM_REQUIRED_RADEONSI=7.0.0
+LLVM_REQUIRED_RADV=7.0.0
+LLVM_REQUIRED_SWR=7.0.0
 
 dnl Check for progs
 AC_PROG_CPP
@@ -125,7 +137,8 @@ AC_PROG_GREP
 AC_PROG_NM
 AM_PROG_AS
 AX_CHECK_GNU_MAKE
-AC_CHECK_PROGS([PYTHON2], [python2.7 python2 python])
+AM_PATH_PYTHON([2.7],, [AM_PATH_PYTHON([3.4],, [:])])
+
 AC_PROG_SED
 AC_PROG_MKDIR_P
 
@@ -157,7 +170,7 @@ fi
 
 AX_CHECK_PYTHON_MAKO_MODULE($PYTHON_MAKO_REQUIRED)
 
-if test -z "$PYTHON2"; then
+if test "$PYTHON" = ":"; then
     if test ! -f "$srcdir/src/util/format_srgb.c"; then
         AC_MSG_ERROR([Python not found - unable to generate sources])
     fi
@@ -310,6 +323,7 @@ AX_CHECK_COMPILE_FLAG([-Werror=missing-prototypes],            [CFLAGS="$CFLAGS 
 AX_CHECK_COMPILE_FLAG([-Wmissing-prototypes],                  [CFLAGS="$CFLAGS -Wmissing-prototypes"])
 dnl Dylan Baker: gcc and clang always accepr -Wno-*, hence check for the original warning, then set the no-* flag
 AX_CHECK_COMPILE_FLAG([-Wmissing-field-initializers],          [CFLAGS="$CFLAGS -Wno-missing-field-initializers"])
+AX_CHECK_COMPILE_FLAG([-Wformat-truncation],                   [CFLAGS="$CFLAGS -Wno-format-truncation"])
 AX_CHECK_COMPILE_FLAG([-fno-math-errno],                       [CFLAGS="$CFLAGS -fno-math-errno"])
 
 AX_CHECK_COMPILE_FLAG([-fno-trapping-math],                    [CFLAGS="$CFLAGS -fno-trapping-math"])
@@ -329,6 +343,7 @@ AX_CHECK_COMPILE_FLAG([-fno-math-errno],                       [CXXFLAGS="$CXXFL
 AX_CHECK_COMPILE_FLAG([-fno-trapping-math],                    [CXXFLAGS="$CXXFLAGS -fno-trapping-math"])
 AX_CHECK_COMPILE_FLAG([-fvisibility=hidden],                   [VISIBILITY_CXXFLAGS="-fvisibility=hidden"])
 AX_CHECK_COMPILE_FLAG([-Wmissing-field-initializers],          [CXXFLAGS="$CXXFLAGS -Wno-missing-field-initializers"])
+AX_CHECK_COMPILE_FLAG([-Wformat-truncation],                   [CXXFLAGS="$CXXFLAGS -Wno-format-truncation"])
 AC_LANG_POP([C++])
 
 # Flags to help ensure that certain portions of the code -- and only those
@@ -976,6 +991,22 @@ if test "x$pthread_stubs_possible" = xyes; then
     PKG_CHECK_MODULES(PTHREADSTUBS, pthread-stubs >= 0.4)
 fi
 
+save_LIBS="$LIBS"
+LIBS="$PTHREAD_LIBS"
+AC_MSG_CHECKING(whether pthread_setaffinity_np is supported)
+AC_LINK_IFELSE([AC_LANG_SOURCE([[
+    #define _GNU_SOURCE
+    #include <pthread.h>
+    int main() {
+       void *a = (void*) &pthread_setaffinity_np;
+       long b = (long) a;
+       return (int) b;
+    }]])],
+  [DEFINES="$DEFINES -DHAVE_PTHREAD_SETAFFINITY"];
+   AC_MSG_RESULT([yes]),
+   AC_MSG_RESULT([no]))
+LIBS="$save_LIBS"
+
 dnl Check for futex for fast inline simple_mtx_t.
 AC_CHECK_HEADER([linux/futex.h], [DEFINES="$DEFINES -DHAVE_LINUX_FUTEX_H"])
 
@@ -1377,7 +1408,7 @@ GALLIUM_DRIVERS_DEFAULT="r300,r600,svga,swrast"
 AC_ARG_WITH([gallium-drivers],
     [AS_HELP_STRING([--with-gallium-drivers@<:@=DIRS...@:>@],
         [comma delimited Gallium drivers list, e.g.
-        "i915,nouveau,r300,r600,radeonsi,freedreno,pl111,svga,swrast,swr,tegra,v3d,vc4,virgl,etnaviv,imx"
+        "i915,nouveau,r300,r600,radeonsi,freedreno,kmsro,svga,swrast,swr,tegra,v3d,vc4,virgl,etnaviv"
         @<:@default=r300,r600,svga,swrast@:>@])],
     [with_gallium_drivers="$withval"],
     [with_gallium_drivers="$GALLIUM_DRIVERS_DEFAULT"])
@@ -1826,6 +1857,10 @@ for plat in $platforms; do
         PKG_CHECK_MODULES([WAYLAND_SCANNER], [wayland-scanner],
                           WAYLAND_SCANNER=`$PKG_CONFIG --variable=wayland_scanner wayland-scanner`,
                           WAYLAND_SCANNER='')
+        PKG_CHECK_EXISTS([wayland-scanner >= 1.15],
+                          AC_SUBST(SCANNER_ARG, 'private-code'),
+                          AC_SUBST(SCANNER_ARG, 'code'))
+
         if test "x$WAYLAND_SCANNER" = x; then
             AC_PATH_PROG([WAYLAND_SCANNER], [wayland-scanner], [:])
         fi
@@ -1842,6 +1877,7 @@ for plat in $platforms; do
         ;;
 
     drm)
+        test "x$enable_egl" = "xyes" &&
         test "x$enable_gbm" = "xno" &&
                 AC_MSG_ERROR([EGL platform drm needs gbm])
         DEFINES="$DEFINES -DHAVE_DRM_PLATFORM"
@@ -1886,7 +1922,7 @@ if test x"$enable_dri3" = xyes; then
     dri3_modifier_modules="xcb-dri3 >= $XCBDRI3_MODIFIERS_REQUIRED xcb-present >= $XCBPRESENT_MODIFIERS_REQUIRED"
     PKG_CHECK_MODULES([XCB_DRI3_MODIFIERS], [$dri3_modifier_modules], [have_dri3_modifiers=yes], [have_dri3_modifiers=no])
 
-    if test "x$have_dri3_modifiers" == xyes; then
+    if test "x$have_dri3_modifiers" = xyes; then
         DEFINES="$DEFINES -DHAVE_DRI3_MODIFIERS"
     fi
 fi
@@ -2698,16 +2734,12 @@ if test -n "$with_gallium_drivers"; then
             ;;
         xfreedreno)
             HAVE_GALLIUM_FREEDRENO=yes
-            PKG_CHECK_MODULES([FREEDRENO], [libdrm >= $LIBDRM_FREEDRENO_REQUIRED libdrm_freedreno >= $LIBDRM_FREEDRENO_REQUIRED])
             require_libdrm "freedreno"
             ;;
         xetnaviv)
             HAVE_GALLIUM_ETNAVIV=yes
             PKG_CHECK_MODULES([ETNAVIV], [libdrm >= $LIBDRM_ETNAVIV_REQUIRED libdrm_etnaviv >= $LIBDRM_ETNAVIV_REQUIRED])
             require_libdrm "etnaviv"
-            ;;
-       ximx)
-            HAVE_GALLIUM_IMX=yes
             ;;
         xtegra)
             HAVE_GALLIUM_TEGRA=yes
@@ -2795,8 +2827,8 @@ if test -n "$with_gallium_drivers"; then
                                DEFINES="$DEFINES -DUSE_V3D_SIMULATOR"],
                               [USE_V3D_SIMULATOR=no])
             ;;
-        xpl111)
-            HAVE_GALLIUM_PL111=yes
+        xkmsro)
+            HAVE_GALLIUM_KMSRO=yes
             ;;
         xvirgl)
             HAVE_GALLIUM_VIRGL=yes
@@ -2813,9 +2845,8 @@ if test -n "$with_gallium_drivers"; then
 fi
 
 # XXX: Keep in sync with LLVM_REQUIRED_SWR
-AM_CONDITIONAL(SWR_INVALID_LLVM_VERSION, test "x$LLVM_VERSION" != x5.0.0 -a \
-                                              "x$LLVM_VERSION" != x5.0.1 -a \
-                                              "x$LLVM_VERSION" != x5.0.2)
+AM_CONDITIONAL(SWR_INVALID_LLVM_VERSION, test "x$LLVM_VERSION" != x7.0.0 -a \
+                                              "x$LLVM_VERSION" != x7.0.1)
 
 if test "x$enable_llvm" = "xyes" -a "$with_gallium_drivers"; then
     llvm_require_version $LLVM_REQUIRED_GALLIUM "gallium"
@@ -2830,12 +2861,8 @@ AM_CONDITIONAL(HAVE_SWR_BUILTIN, test "x$HAVE_SWR_BUILTIN" = xyes)
 
 dnl We need to validate some needed dependencies for renderonly drivers.
 
-if test "x$HAVE_GALLIUM_ETNAVIV" != xyes -a "x$HAVE_GALLIUM_IMX" = xyes  ; then
-    AC_MSG_ERROR([Building with imx requires etnaviv])
-fi
-
-if test "x$HAVE_GALLIUM_VC4" != xyes -a "x$HAVE_GALLIUM_PL111" = xyes  ; then
-    AC_MSG_ERROR([Building with pl111 requires vc4])
+if test "x$HAVE_GALLIUM_VC4" != xyes -a "x$HAVE_GALLIUM_KMSRO" = xyes  ; then
+    AC_MSG_ERROR([Building with kmsro requires vc4])
 fi
 
 if test "x$HAVE_GALLIUM_NOUVEAU" != xyes -a "x$HAVE_GALLIUM_TEGRA" = xyes; then
@@ -2883,6 +2910,7 @@ if test "x$enable_llvm" = xyes; then
     LLVM_LDFLAGS=`$LLVM_CONFIG --ldflags`
     LLVM_CFLAGS=$LLVM_CPPFLAGS   # CPPFLAGS seem to be sufficient
     LLVM_CXXFLAGS=`strip_unwanted_llvm_flags "$LLVM_CONFIG --cxxflags"`
+    LLVM_CXXFLAGS="$CXX11_CXXFLAGS $LLVM_CXXFLAGS"
 
     dnl Set LLVM_LIBS - This is done after the driver configuration so
     dnl that drivers can add additional components to LLVM_COMPONENTS.
@@ -2917,11 +2945,11 @@ if test "x$enable_llvm" = xyes; then
     fi
 
     dnl The gallium-xlib GLX and gallium OSMesa targets directly embed the
-    dnl swr/llvmpipe driver into the final binary.  Adding LLVM_LIBS results in 
+    dnl swr/llvmpipe driver into the final binary.  Adding LLVM_LIBS results in
     dnl the LLVM library propagated in the Libs.private of the respective .pc
     dnl file which ensures complete dependency information when statically
     dnl linking.
-    if test "x$enable_glx" == xgallium-xlib; then
+    if test "x$enable_glx" = xgallium-xlib; then
         GL_PC_LIB_PRIV="$GL_PC_LIB_PRIV $LLVM_LIBS"
     fi
     if test "x$enable_gallium_osmesa" = xyes; then
@@ -2931,14 +2959,13 @@ fi
 
 AM_CONDITIONAL(HAVE_GALLIUM_SVGA, test "x$HAVE_GALLIUM_SVGA" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_I915, test "x$HAVE_GALLIUM_I915" = xyes)
-AM_CONDITIONAL(HAVE_GALLIUM_PL111, test "x$HAVE_GALLIUM_PL111" = xyes)
+AM_CONDITIONAL(HAVE_GALLIUM_KMSRO, test "x$HAVE_GALLIUM_KMSRO" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_R300, test "x$HAVE_GALLIUM_R300" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_R600, test "x$HAVE_GALLIUM_R600" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_RADEONSI, test "x$HAVE_GALLIUM_RADEONSI" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_NOUVEAU, test "x$HAVE_GALLIUM_NOUVEAU" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_FREEDRENO, test "x$HAVE_GALLIUM_FREEDRENO" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_ETNAVIV, test "x$HAVE_GALLIUM_ETNAVIV" = xyes)
-AM_CONDITIONAL(HAVE_GALLIUM_IMX, test "x$HAVE_GALLIUM_IMX" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_TEGRA, test "x$HAVE_GALLIUM_TEGRA" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_SOFTPIPE, test "x$HAVE_GALLIUM_SOFTPIPE" = xyes)
 AM_CONDITIONAL(HAVE_GALLIUM_LLVMPIPE, test "x$HAVE_GALLIUM_LLVMPIPE" = xyes)
@@ -2977,6 +3004,7 @@ AM_CONDITIONAL(HAVE_AMD_DRIVERS, test "x$HAVE_GALLIUM_RADEONSI" = xyes -o \
 AM_CONDITIONAL(HAVE_BROADCOM_DRIVERS, test "x$HAVE_GALLIUM_VC4" = xyes -o \
                                       "x$HAVE_GALLIUM_V3D" = xyes)
 
+AM_CONDITIONAL(HAVE_FREEDRENO_DRIVERS, test "x$HAVE_GALLIUM_FREEDRENO" = xyes)
 AM_CONDITIONAL(HAVE_INTEL_DRIVERS, test "x$HAVE_INTEL_VULKAN" = xyes -o \
                                         "x$HAVE_I965_DRI" = xyes)
 
@@ -3023,7 +3051,7 @@ AC_SUBST([XVMC_MAJOR], 1)
 AC_SUBST([XVMC_MINOR], 0)
 
 AC_SUBST([XA_MAJOR], 2)
-AC_SUBST([XA_MINOR], 4)
+AC_SUBST([XA_MINOR], 5)
 AC_SUBST([XA_PATCH], 0)
 AC_SUBST([XA_VERSION], "$XA_MAJOR.$XA_MINOR.$XA_PATCH")
 
@@ -3069,6 +3097,7 @@ AC_CONFIG_FILES([Makefile
                  src/amd/vulkan/Makefile
                  src/broadcom/Makefile
                  src/compiler/Makefile
+                 src/freedreno/Makefile
                  src/egl/Makefile
                  src/egl/main/egl.pc
                  src/egl/wayland/wayland-drm/Makefile
@@ -3079,7 +3108,7 @@ AC_CONFIG_FILES([Makefile
                  src/gallium/drivers/i915/Makefile
                  src/gallium/drivers/llvmpipe/Makefile
                  src/gallium/drivers/nouveau/Makefile
-                 src/gallium/drivers/pl111/Makefile
+                 src/gallium/drivers/kmsro/Makefile
                  src/gallium/drivers/r300/Makefile
                  src/gallium/drivers/r600/Makefile
                  src/gallium/drivers/radeonsi/Makefile
@@ -3088,7 +3117,6 @@ AC_CONFIG_FILES([Makefile
                  src/gallium/drivers/swr/Makefile
                  src/gallium/drivers/tegra/Makefile
                  src/gallium/drivers/etnaviv/Makefile
-                 src/gallium/drivers/imx/Makefile
                  src/gallium/drivers/v3d/Makefile
                  src/gallium/drivers/vc4/Makefile
                  src/gallium/drivers/virgl/Makefile
@@ -3123,11 +3151,10 @@ AC_CONFIG_FILES([Makefile
                  src/gallium/tests/trivial/Makefile
                  src/gallium/tests/unit/Makefile
                  src/gallium/winsys/etnaviv/drm/Makefile
-                 src/gallium/winsys/imx/drm/Makefile
                  src/gallium/winsys/freedreno/drm/Makefile
                  src/gallium/winsys/i915/drm/Makefile
                  src/gallium/winsys/nouveau/drm/Makefile
-                 src/gallium/winsys/pl111/drm/Makefile
+                 src/gallium/winsys/kmsro/drm/Makefile
                  src/gallium/winsys/radeon/drm/Makefile
                  src/gallium/winsys/amdgpu/drm/Makefile
                  src/gallium/winsys/svga/drm/Makefile
@@ -3172,6 +3199,7 @@ AC_CONFIG_FILES([Makefile
                  src/mesa/main/tests/Makefile
                  src/mesa/state_tracker/tests/Makefile
                  src/util/Makefile
+                 src/util/tests/fast_idiv_by_const/Makefile
                  src/util/tests/hash_table/Makefile
                  src/util/tests/set/Makefile
                  src/util/tests/string_buffer/Makefile
@@ -3343,7 +3371,7 @@ if test "x$enable_llvm" = xyes; then
     echo "        LLVM_LDFLAGS:    $LLVM_LDFLAGS"
     echo ""
 fi
-echo "        PYTHON2:         $PYTHON2"
+echo "        PYTHON:         $PYTHON"
 
 echo ""
 echo "        Run '${MAKE-make}' to build Mesa"
