@@ -129,8 +129,6 @@ files_i965 = files(
   'intel_tex_image.c',
   'intel_tex_obj.h',
   'intel_tex_validate.c',
-  'intel_tiled_memcpy.c',
-  'intel_tiled_memcpy.h',
   'intel_upload.c',
   'libdrm_macros.h',
 )
@@ -170,7 +168,7 @@ i965_oa_sources = custom_target(
   input : i965_hw_metrics_xml_files,
   output : [ 'brw_oa_metrics.c', 'brw_oa_metrics.h' ],
   command : [
-    prog_python2, files('brw_oa.py'),
+    prog_python, files('brw_oa.py'),
     '--code', '@OUTPUT0@', '--header', '@OUTPUT1@',
     '@INPUT@',
   ],
@@ -179,7 +177,7 @@ i965_oa_sources = custom_target(
 libi965 = static_library(
   'i965',
   [files_i965, i965_oa_sources, ir_expression_operation_h,
-   xmlpool_options_h],
+   xmlpool_options_h, float64_glsl_h],
   include_directories : [
     inc_common, inc_intel, inc_dri_common, inc_util, inc_drm_uapi,
   ],
@@ -187,9 +185,9 @@ libi965 = static_library(
   cpp_args : [cpp_vis_args, c_sse2_args],
   link_with : [
     i965_gen_libs, libintel_common, libintel_dev, libisl, libintel_compiler,
-    libblorp,
+    libblorp
   ],
-  dependencies : [dep_libdrm, dep_valgrind, idep_nir_headers],
+  dependencies : [dep_libdrm, dep_valgrind, idep_nir_headers, idep_genxml],
 )
 
 dri_drivers += libi965

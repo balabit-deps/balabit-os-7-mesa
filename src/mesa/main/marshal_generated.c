@@ -64,7 +64,7 @@ _mesa_marshal_NewList(GLuint list, GLenum mode)
    debug_print_marshal("NewList");
    if (true) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("NewList");
       CALL_NewList(ctx->CurrentServerDispatch, (list, mode));
       return;
@@ -254,13 +254,6 @@ _mesa_marshal_Begin(GLenum mode)
    size_t cmd_size = sizeof(struct marshal_cmd_Begin);
    struct marshal_cmd_Begin *cmd;
    debug_print_marshal("Begin");
-   if (true) {
-      _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
-      debug_print_sync_fallback("Begin");
-      CALL_Begin(ctx->CurrentServerDispatch, (mode));
-      return;
-   }
    if (cmd_size <= MARSHAL_MAX_CMD_SIZE) {
       cmd = _mesa_glthread_allocate_command(ctx, DISPATCH_CMD_Begin, cmd_size);
       cmd->mode = mode;
@@ -9240,7 +9233,7 @@ _mesa_marshal_ColorPointer(GLint size, GLenum type, GLsizei stride, const GLvoid
    debug_print_marshal("ColorPointer");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("ColorPointer");
       CALL_ColorPointer(ctx->CurrentServerDispatch, (size, type, stride, pointer));
       return;
@@ -9358,7 +9351,7 @@ _mesa_marshal_DrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid
    debug_print_marshal("DrawElements");
    if (_mesa_glthread_is_non_vbo_draw_elements(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("DrawElements");
       CALL_DrawElements(ctx->CurrentServerDispatch, (mode, count, type, indices));
       return;
@@ -9402,7 +9395,7 @@ _mesa_marshal_EdgeFlagPointer(GLsizei stride, const GLvoid * pointer)
    debug_print_marshal("EdgeFlagPointer");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("EdgeFlagPointer");
       CALL_EdgeFlagPointer(ctx->CurrentServerDispatch, (stride, pointer));
       return;
@@ -9489,7 +9482,7 @@ _mesa_marshal_IndexPointer(GLenum type, GLsizei stride, const GLvoid * pointer)
    debug_print_marshal("IndexPointer");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("IndexPointer");
       CALL_IndexPointer(ctx->CurrentServerDispatch, (type, stride, pointer));
       return;
@@ -9545,7 +9538,7 @@ _mesa_marshal_NormalPointer(GLenum type, GLsizei stride, const GLvoid * pointer)
    debug_print_marshal("NormalPointer");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("NormalPointer");
       CALL_NormalPointer(ctx->CurrentServerDispatch, (type, stride, pointer));
       return;
@@ -9592,7 +9585,7 @@ _mesa_marshal_TexCoordPointer(GLint size, GLenum type, GLsizei stride, const GLv
    debug_print_marshal("TexCoordPointer");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("TexCoordPointer");
       CALL_TexCoordPointer(ctx->CurrentServerDispatch, (size, type, stride, pointer));
       return;
@@ -9640,7 +9633,7 @@ _mesa_marshal_VertexPointer(GLint size, GLenum type, GLsizei stride, const GLvoi
    debug_print_marshal("VertexPointer");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("VertexPointer");
       CALL_VertexPointer(ctx->CurrentServerDispatch, (size, type, stride, pointer));
       return;
@@ -10314,7 +10307,7 @@ _mesa_marshal_DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei c
    debug_print_marshal("DrawRangeElements");
    if (_mesa_glthread_is_non_vbo_draw_elements(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("DrawRangeElements");
       CALL_DrawRangeElements(ctx->CurrentServerDispatch, (mode, start, end, count, type, indices));
       return;
@@ -12661,7 +12654,7 @@ _mesa_marshal_FogCoordPointer(GLenum type, GLsizei stride, const GLvoid * pointe
    debug_print_marshal("FogCoordPointer");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("FogCoordPointer");
       CALL_FogCoordPointer(ctx->CurrentServerDispatch, (type, stride, pointer));
       return;
@@ -13382,7 +13375,7 @@ _mesa_marshal_SecondaryColorPointer(GLint size, GLenum type, GLsizei stride, con
    debug_print_marshal("SecondaryColorPointer");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("SecondaryColorPointer");
       CALL_SecondaryColorPointer(ctx->CurrentServerDispatch, (size, type, stride, pointer));
       return;
@@ -17040,7 +17033,7 @@ _mesa_marshal_VertexAttribPointer(GLuint index, GLint size, GLenum type, GLboole
    debug_print_marshal("VertexAttribPointer");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("VertexAttribPointer");
       CALL_VertexAttribPointer(ctx->CurrentServerDispatch, (index, size, type, normalized, stride, pointer));
       return;
@@ -18204,7 +18197,7 @@ _mesa_marshal_DrawElementsInstancedARB(GLenum mode, GLsizei count, GLenum type, 
    debug_print_marshal("DrawElementsInstancedARB");
    if (_mesa_glthread_is_non_vbo_draw_elements(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("DrawElementsInstancedARB");
       CALL_DrawElementsInstancedARB(ctx->CurrentServerDispatch, (mode, count, type, indices, primcount));
       return;
@@ -19000,7 +18993,7 @@ _mesa_marshal_BindVertexArray(GLuint array)
    debug_print_marshal("BindVertexArray");
    if (_mesa_glthread_is_compat_bind_vertex_array(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("BindVertexArray");
       CALL_BindVertexArray(ctx->CurrentServerDispatch, (array));
       return;
@@ -19261,7 +19254,7 @@ _mesa_marshal_DrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, co
    debug_print_marshal("DrawElementsBaseVertex");
    if (_mesa_glthread_is_non_vbo_draw_elements(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("DrawElementsBaseVertex");
       CALL_DrawElementsBaseVertex(ctx->CurrentServerDispatch, (mode, count, type, indices, basevertex));
       return;
@@ -19316,7 +19309,7 @@ _mesa_marshal_DrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuint end,
    debug_print_marshal("DrawRangeElementsBaseVertex");
    if (_mesa_glthread_is_non_vbo_draw_elements(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("DrawRangeElementsBaseVertex");
       CALL_DrawRangeElementsBaseVertex(ctx->CurrentServerDispatch, (mode, start, end, count, type, indices, basevertex));
       return;
@@ -19382,7 +19375,7 @@ _mesa_marshal_DrawElementsInstancedBaseVertex(GLenum mode, GLsizei count, GLenum
    debug_print_marshal("DrawElementsInstancedBaseVertex");
    if (_mesa_glthread_is_non_vbo_draw_elements(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("DrawElementsInstancedBaseVertex");
       CALL_DrawElementsInstancedBaseVertex(ctx->CurrentServerDispatch, (mode, count, type, indices, primcount, basevertex));
       return;
@@ -25567,7 +25560,7 @@ _mesa_marshal_DrawArraysInstancedBaseInstance(GLenum mode, GLint first, GLsizei 
    debug_print_marshal("DrawArraysInstancedBaseInstance");
    if (_mesa_glthread_is_non_vbo_draw_elements(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("DrawArraysInstancedBaseInstance");
       CALL_DrawArraysInstancedBaseInstance(ctx->CurrentServerDispatch, (mode, first, count, primcount, baseinstance));
       return;
@@ -25620,7 +25613,7 @@ _mesa_marshal_DrawElementsInstancedBaseInstance(GLenum mode, GLsizei count, GLen
    debug_print_marshal("DrawElementsInstancedBaseInstance");
    if (_mesa_glthread_is_non_vbo_draw_elements(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("DrawElementsInstancedBaseInstance");
       CALL_DrawElementsInstancedBaseInstance(ctx->CurrentServerDispatch, (mode, count, type, indices, primcount, baseinstance));
       return;
@@ -25676,7 +25669,7 @@ _mesa_marshal_DrawElementsInstancedBaseVertexBaseInstance(GLenum mode, GLsizei c
    debug_print_marshal("DrawElementsInstancedBaseVertexBaseInstance");
    if (_mesa_glthread_is_non_vbo_draw_elements(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("DrawElementsInstancedBaseVertexBaseInstance");
       CALL_DrawElementsInstancedBaseVertexBaseInstance(ctx->CurrentServerDispatch, (mode, count, type, indices, primcount, basevertex, baseinstance));
       return;
@@ -31932,7 +31925,7 @@ _mesa_marshal_ColorPointerEXT(GLint size, GLenum type, GLsizei stride, GLsizei c
    debug_print_marshal("ColorPointerEXT");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("ColorPointerEXT");
       CALL_ColorPointerEXT(ctx->CurrentServerDispatch, (size, type, stride, count, pointer));
       return;
@@ -31979,7 +31972,7 @@ _mesa_marshal_EdgeFlagPointerEXT(GLsizei stride, GLsizei count, const GLboolean 
    debug_print_marshal("EdgeFlagPointerEXT");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("EdgeFlagPointerEXT");
       CALL_EdgeFlagPointerEXT(ctx->CurrentServerDispatch, (stride, count, pointer));
       return;
@@ -32026,7 +32019,7 @@ _mesa_marshal_IndexPointerEXT(GLenum type, GLsizei stride, GLsizei count, const 
    debug_print_marshal("IndexPointerEXT");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("IndexPointerEXT");
       CALL_IndexPointerEXT(ctx->CurrentServerDispatch, (type, stride, count, pointer));
       return;
@@ -32074,7 +32067,7 @@ _mesa_marshal_NormalPointerEXT(GLenum type, GLsizei stride, GLsizei count, const
    debug_print_marshal("NormalPointerEXT");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("NormalPointerEXT");
       CALL_NormalPointerEXT(ctx->CurrentServerDispatch, (type, stride, count, pointer));
       return;
@@ -32124,7 +32117,7 @@ _mesa_marshal_TexCoordPointerEXT(GLint size, GLenum type, GLsizei stride, GLsize
    debug_print_marshal("TexCoordPointerEXT");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("TexCoordPointerEXT");
       CALL_TexCoordPointerEXT(ctx->CurrentServerDispatch, (size, type, stride, count, pointer));
       return;
@@ -32175,7 +32168,7 @@ _mesa_marshal_VertexPointerEXT(GLint size, GLenum type, GLsizei stride, GLsizei 
    debug_print_marshal("VertexPointerEXT");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("VertexPointerEXT");
       CALL_VertexPointerEXT(ctx->CurrentServerDispatch, (size, type, stride, count, pointer));
       return;
@@ -35939,6 +35932,100 @@ _mesa_marshal_FramebufferFetchBarrierEXT(void)
 }
 
 
+/* RenderbufferStorageMultisampleAdvancedAMD: marshalled asynchronously */
+struct marshal_cmd_RenderbufferStorageMultisampleAdvancedAMD
+{
+   struct marshal_cmd_base cmd_base;
+   GLenum target;
+   GLsizei samples;
+   GLsizei storageSamples;
+   GLenum internalformat;
+   GLsizei width;
+   GLsizei height;
+};
+static inline void
+_mesa_unmarshal_RenderbufferStorageMultisampleAdvancedAMD(struct gl_context *ctx, const struct marshal_cmd_RenderbufferStorageMultisampleAdvancedAMD *cmd)
+{
+   const GLenum target = cmd->target;
+   const GLsizei samples = cmd->samples;
+   const GLsizei storageSamples = cmd->storageSamples;
+   const GLenum internalformat = cmd->internalformat;
+   const GLsizei width = cmd->width;
+   const GLsizei height = cmd->height;
+   CALL_RenderbufferStorageMultisampleAdvancedAMD(ctx->CurrentServerDispatch, (target, samples, storageSamples, internalformat, width, height));
+}
+static void GLAPIENTRY
+_mesa_marshal_RenderbufferStorageMultisampleAdvancedAMD(GLenum target, GLsizei samples, GLsizei storageSamples, GLenum internalformat, GLsizei width, GLsizei height)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   size_t cmd_size = sizeof(struct marshal_cmd_RenderbufferStorageMultisampleAdvancedAMD);
+   struct marshal_cmd_RenderbufferStorageMultisampleAdvancedAMD *cmd;
+   debug_print_marshal("RenderbufferStorageMultisampleAdvancedAMD");
+   if (cmd_size <= MARSHAL_MAX_CMD_SIZE) {
+      cmd = _mesa_glthread_allocate_command(ctx, DISPATCH_CMD_RenderbufferStorageMultisampleAdvancedAMD, cmd_size);
+      cmd->target = target;
+      cmd->samples = samples;
+      cmd->storageSamples = storageSamples;
+      cmd->internalformat = internalformat;
+      cmd->width = width;
+      cmd->height = height;
+      _mesa_post_marshal_hook(ctx);
+      return;
+   }
+
+   _mesa_glthread_finish(ctx);
+   debug_print_sync_fallback("RenderbufferStorageMultisampleAdvancedAMD");
+   CALL_RenderbufferStorageMultisampleAdvancedAMD(ctx->CurrentServerDispatch, (target, samples, storageSamples, internalformat, width, height));
+}
+
+
+/* NamedRenderbufferStorageMultisampleAdvancedAMD: marshalled asynchronously */
+struct marshal_cmd_NamedRenderbufferStorageMultisampleAdvancedAMD
+{
+   struct marshal_cmd_base cmd_base;
+   GLuint renderbuffer;
+   GLsizei samples;
+   GLsizei storageSamples;
+   GLenum internalformat;
+   GLsizei width;
+   GLsizei height;
+};
+static inline void
+_mesa_unmarshal_NamedRenderbufferStorageMultisampleAdvancedAMD(struct gl_context *ctx, const struct marshal_cmd_NamedRenderbufferStorageMultisampleAdvancedAMD *cmd)
+{
+   const GLuint renderbuffer = cmd->renderbuffer;
+   const GLsizei samples = cmd->samples;
+   const GLsizei storageSamples = cmd->storageSamples;
+   const GLenum internalformat = cmd->internalformat;
+   const GLsizei width = cmd->width;
+   const GLsizei height = cmd->height;
+   CALL_NamedRenderbufferStorageMultisampleAdvancedAMD(ctx->CurrentServerDispatch, (renderbuffer, samples, storageSamples, internalformat, width, height));
+}
+static void GLAPIENTRY
+_mesa_marshal_NamedRenderbufferStorageMultisampleAdvancedAMD(GLuint renderbuffer, GLsizei samples, GLsizei storageSamples, GLenum internalformat, GLsizei width, GLsizei height)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   size_t cmd_size = sizeof(struct marshal_cmd_NamedRenderbufferStorageMultisampleAdvancedAMD);
+   struct marshal_cmd_NamedRenderbufferStorageMultisampleAdvancedAMD *cmd;
+   debug_print_marshal("NamedRenderbufferStorageMultisampleAdvancedAMD");
+   if (cmd_size <= MARSHAL_MAX_CMD_SIZE) {
+      cmd = _mesa_glthread_allocate_command(ctx, DISPATCH_CMD_NamedRenderbufferStorageMultisampleAdvancedAMD, cmd_size);
+      cmd->renderbuffer = renderbuffer;
+      cmd->samples = samples;
+      cmd->storageSamples = storageSamples;
+      cmd->internalformat = internalformat;
+      cmd->width = width;
+      cmd->height = height;
+      _mesa_post_marshal_hook(ctx);
+      return;
+   }
+
+   _mesa_glthread_finish(ctx);
+   debug_print_sync_fallback("NamedRenderbufferStorageMultisampleAdvancedAMD");
+   CALL_NamedRenderbufferStorageMultisampleAdvancedAMD(ctx->CurrentServerDispatch, (renderbuffer, samples, storageSamples, internalformat, width, height));
+}
+
+
 /* StencilFuncSeparateATI: marshalled asynchronously */
 struct marshal_cmd_StencilFuncSeparateATI
 {
@@ -36627,7 +36714,7 @@ _mesa_marshal_VertexAttribIPointer(GLuint index, GLint size, GLenum type, GLsize
    debug_print_marshal("VertexAttribIPointer");
    if (_mesa_glthread_is_non_vbo_vertex_attrib_pointer(ctx)) {
       _mesa_glthread_finish(ctx);
-      _mesa_glthread_restore_dispatch(ctx);
+      _mesa_glthread_restore_dispatch(ctx, __func__);
       debug_print_sync_fallback("VertexAttribIPointer");
       CALL_VertexAttribIPointer(ctx->CurrentServerDispatch, (index, size, type, stride, pointer));
       return;
@@ -40349,6 +40436,53 @@ fallback_to_sync:
 }
 
 
+/* FramebufferTexture2DMultisampleEXT: marshalled asynchronously */
+struct marshal_cmd_FramebufferTexture2DMultisampleEXT
+{
+   struct marshal_cmd_base cmd_base;
+   GLenum target;
+   GLenum attachment;
+   GLenum textarget;
+   GLuint texture;
+   GLint level;
+   GLsizei samples;
+};
+static inline void
+_mesa_unmarshal_FramebufferTexture2DMultisampleEXT(struct gl_context *ctx, const struct marshal_cmd_FramebufferTexture2DMultisampleEXT *cmd)
+{
+   const GLenum target = cmd->target;
+   const GLenum attachment = cmd->attachment;
+   const GLenum textarget = cmd->textarget;
+   const GLuint texture = cmd->texture;
+   const GLint level = cmd->level;
+   const GLsizei samples = cmd->samples;
+   CALL_FramebufferTexture2DMultisampleEXT(ctx->CurrentServerDispatch, (target, attachment, textarget, texture, level, samples));
+}
+static void GLAPIENTRY
+_mesa_marshal_FramebufferTexture2DMultisampleEXT(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLsizei samples)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   size_t cmd_size = sizeof(struct marshal_cmd_FramebufferTexture2DMultisampleEXT);
+   struct marshal_cmd_FramebufferTexture2DMultisampleEXT *cmd;
+   debug_print_marshal("FramebufferTexture2DMultisampleEXT");
+   if (cmd_size <= MARSHAL_MAX_CMD_SIZE) {
+      cmd = _mesa_glthread_allocate_command(ctx, DISPATCH_CMD_FramebufferTexture2DMultisampleEXT, cmd_size);
+      cmd->target = target;
+      cmd->attachment = attachment;
+      cmd->textarget = textarget;
+      cmd->texture = texture;
+      cmd->level = level;
+      cmd->samples = samples;
+      _mesa_post_marshal_hook(ctx);
+      return;
+   }
+
+   _mesa_glthread_finish(ctx);
+   debug_print_sync_fallback("FramebufferTexture2DMultisampleEXT");
+   CALL_FramebufferTexture2DMultisampleEXT(ctx->CurrentServerDispatch, (target, attachment, textarget, texture, level, samples));
+}
+
+
 /* DepthRangeArrayfvOES: marshalled synchronously */
 static void GLAPIENTRY
 _mesa_marshal_DepthRangeArrayfvOES(GLuint first, GLsizei count, const GLfloat * v)
@@ -43627,6 +43761,14 @@ _mesa_unmarshal_dispatch_cmd(struct gl_context *ctx, const void *cmd)
       debug_print_unmarshal("FramebufferFetchBarrierEXT");
       _mesa_unmarshal_FramebufferFetchBarrierEXT(ctx, (const struct marshal_cmd_FramebufferFetchBarrierEXT *) cmd);
       break;
+   case DISPATCH_CMD_RenderbufferStorageMultisampleAdvancedAMD:
+      debug_print_unmarshal("RenderbufferStorageMultisampleAdvancedAMD");
+      _mesa_unmarshal_RenderbufferStorageMultisampleAdvancedAMD(ctx, (const struct marshal_cmd_RenderbufferStorageMultisampleAdvancedAMD *) cmd);
+      break;
+   case DISPATCH_CMD_NamedRenderbufferStorageMultisampleAdvancedAMD:
+      debug_print_unmarshal("NamedRenderbufferStorageMultisampleAdvancedAMD");
+      _mesa_unmarshal_NamedRenderbufferStorageMultisampleAdvancedAMD(ctx, (const struct marshal_cmd_NamedRenderbufferStorageMultisampleAdvancedAMD *) cmd);
+      break;
    case DISPATCH_CMD_StencilFuncSeparateATI:
       debug_print_unmarshal("StencilFuncSeparateATI");
       _mesa_unmarshal_StencilFuncSeparateATI(ctx, (const struct marshal_cmd_StencilFuncSeparateATI *) cmd);
@@ -44006,6 +44148,10 @@ _mesa_unmarshal_dispatch_cmd(struct gl_context *ctx, const void *cmd)
    case DISPATCH_CMD_DiscardFramebufferEXT:
       debug_print_unmarshal("DiscardFramebufferEXT");
       _mesa_unmarshal_DiscardFramebufferEXT(ctx, (const struct marshal_cmd_DiscardFramebufferEXT *) cmd);
+      break;
+   case DISPATCH_CMD_FramebufferTexture2DMultisampleEXT:
+      debug_print_unmarshal("FramebufferTexture2DMultisampleEXT");
+      _mesa_unmarshal_FramebufferTexture2DMultisampleEXT(ctx, (const struct marshal_cmd_FramebufferTexture2DMultisampleEXT *) cmd);
       break;
    case DISPATCH_CMD_DepthRangeIndexedfOES:
       debug_print_unmarshal("DepthRangeIndexedfOES");
@@ -45243,6 +45389,8 @@ _mesa_create_marshal_table(const struct gl_context *ctx)
    SET_PolygonOffsetClampEXT(table, _mesa_marshal_PolygonOffsetClampEXT);
    SET_WindowRectanglesEXT(table, _mesa_marshal_WindowRectanglesEXT);
    SET_FramebufferFetchBarrierEXT(table, _mesa_marshal_FramebufferFetchBarrierEXT);
+   SET_RenderbufferStorageMultisampleAdvancedAMD(table, _mesa_marshal_RenderbufferStorageMultisampleAdvancedAMD);
+   SET_NamedRenderbufferStorageMultisampleAdvancedAMD(table, _mesa_marshal_NamedRenderbufferStorageMultisampleAdvancedAMD);
    SET_StencilFuncSeparateATI(table, _mesa_marshal_StencilFuncSeparateATI);
    SET_ProgramEnvParameters4fvEXT(table, _mesa_marshal_ProgramEnvParameters4fvEXT);
    SET_ProgramLocalParameters4fvEXT(table, _mesa_marshal_ProgramLocalParameters4fvEXT);
@@ -45410,6 +45558,7 @@ _mesa_create_marshal_table(const struct gl_context *ctx)
    SET_PointSizePointerOES(table, _mesa_marshal_PointSizePointerOES);
    SET_QueryMatrixxOES(table, _mesa_marshal_QueryMatrixxOES);
    SET_DiscardFramebufferEXT(table, _mesa_marshal_DiscardFramebufferEXT);
+   SET_FramebufferTexture2DMultisampleEXT(table, _mesa_marshal_FramebufferTexture2DMultisampleEXT);
    SET_DepthRangeArrayfvOES(table, _mesa_marshal_DepthRangeArrayfvOES);
    SET_DepthRangeIndexedfOES(table, _mesa_marshal_DepthRangeIndexedfOES);
 

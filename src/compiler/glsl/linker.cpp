@@ -84,6 +84,7 @@
 #include "builtin_functions.h"
 #include "shader_cache.h"
 #include "util/u_string.h"
+#include "util/u_math.h"
 
 #include "main/imports.h"
 #include "main/shaderobj.h"
@@ -1089,7 +1090,7 @@ cross_validate_globals(struct gl_context *ctx, struct gl_shader_program *prog,
             }
          }
 
-         if (existing->data.invariant != var->data.invariant) {
+         if (existing->data.explicit_invariant != var->data.explicit_invariant) {
             linker_error(prog, "declarations for %s `%s' have "
                          "mismatching invariant qualifiers\n",
                          mode_string(var), var->name);
@@ -1286,6 +1287,66 @@ interstage_cross_validate_uniform_blocks(struct gl_shader_program *prog,
    return true;
 }
 
+/**
+ * Verifies the invariance of built-in special variables.
+ */
+static bool
+validate_invariant_builtins(struct gl_shader_program *prog,
+                            const gl_linked_shader *vert,
+                            const gl_linked_shader *frag)
+{
+   const ir_variable *var_vert;
+   const ir_variable *var_frag;
+
+   if (!vert || !frag)
+      return true;
+
+   /*
+    * From OpenGL ES Shading Language 1.0 specification
+    * (4.6.4 Invariance and Linkage):
+    *     "The invariance of varyings that are declared in both the vertex and
+    *     fragment shaders must match. For the built-in special variables,
+    *     gl_FragCoord can only be declared invariant if and only if
+    *     gl_Position is declared invariant. Similarly gl_PointCoord can only
+    *     be declared invariant if and only if gl_PointSize is declared
+    *     invariant. It is an error to declare gl_FrontFacing as invariant.
+    *     The invariance of gl_FrontFacing is the same as the invariance of
+    *     gl_Position."
+    */
+   var_frag = frag->symbols->get_variable("gl_FragCoord");
+   if (var_frag && var_frag->data.invariant) {
+      var_vert = vert->symbols->get_variable("gl_Position");
+      if (var_vert && !var_vert->data.invariant) {
+         linker_error(prog,
+               "fragment shader built-in `%s' has invariant qualifier, "
+               "but vertex shader built-in `%s' lacks invariant qualifier\n",
+               var_frag->name, var_vert->name);
+         return false;
+      }
+   }
+
+   var_frag = frag->symbols->get_variable("gl_PointCoord");
+   if (var_frag && var_frag->data.invariant) {
+      var_vert = vert->symbols->get_variable("gl_PointSize");
+      if (var_vert && !var_vert->data.invariant) {
+         linker_error(prog,
+               "fragment shader built-in `%s' has invariant qualifier, "
+               "but vertex shader built-in `%s' lacks invariant qualifier\n",
+               var_frag->name, var_vert->name);
+         return false;
+      }
+   }
+
+   var_frag = frag->symbols->get_variable("gl_FrontFacing");
+   if (var_frag && var_frag->data.invariant) {
+      linker_error(prog,
+            "fragment shader built-in `%s' can not be declared as invariant\n",
+            var_frag->name);
+      return false;
+   }
+
+   return true;
+}
 
 /**
  * Populates a shaders symbol table with all global declarations
@@ -1399,8 +1460,7 @@ move_non_declarations(exec_list *instructions, exec_node *last,
    hash_table *temps = NULL;
 
    if (make_copies)
-      temps = _mesa_hash_table_create(NULL, _mesa_hash_pointer,
-                                      _mesa_key_pointer_equal);
+      temps = _mesa_pointer_hash_table_create(NULL);
 
    foreach_in_list_safe(ir_instruction, inst, instructions) {
       if (inst->as_function())
@@ -1446,8 +1506,7 @@ class array_sizing_visitor : public deref_type_updater {
 public:
    array_sizing_visitor()
       : mem_ctx(ralloc_context(NULL)),
-        unnamed_interfaces(_mesa_hash_table_create(NULL, _mesa_hash_pointer,
-                                                   _mesa_key_pointer_equal))
+        unnamed_interfaces(_mesa_pointer_hash_table_create(NULL))
    {
    }
 
@@ -2632,24 +2691,29 @@ find_available_slots(unsigned used_mask, unsigned needed_count)
 #define SAFE_MASK_FROM_INDEX(i) (((i) >= 32) ? ~0 : ((1 << (i)) - 1))
 
 /**
- * Assign locations for either VS inputs or FS outputs
+ * Assign locations for either VS inputs or FS outputs.
  *
- * \param mem_ctx       Temporary ralloc context used for linking
- * \param prog          Shader program whose variables need locations assigned
- * \param constants     Driver specific constant values for the program.
- * \param target_index  Selector for the program target to receive location
- *                      assignmnets.  Must be either \c MESA_SHADER_VERTEX or
- *                      \c MESA_SHADER_FRAGMENT.
+ * \param mem_ctx        Temporary ralloc context used for linking.
+ * \param prog           Shader program whose variables need locations
+ *                       assigned.
+ * \param constants      Driver specific constant values for the program.
+ * \param target_index   Selector for the program target to receive location
+ *                       assignmnets.  Must be either \c MESA_SHADER_VERTEX or
+ *                       \c MESA_SHADER_FRAGMENT.
+ * \param do_assignment  Whether we are actually marking the assignment or we
+ *                       are just doing a dry-run checking.
  *
  * \return
- * If locations are successfully assigned, true is returned.  Otherwise an
- * error is emitted to the shader link log and false is returned.
+ * If locations are (or can be, in case of dry-running) successfully assigned,
+ * true is returned.  Otherwise an error is emitted to the shader link log and
+ * false is returned.
  */
 static bool
 assign_attribute_or_color_locations(void *mem_ctx,
                                     gl_shader_program *prog,
                                     struct gl_constants *constants,
-                                    unsigned target_index)
+                                    unsigned target_index,
+                                    bool do_assignment)
 {
    /* Maximum number of generic locations.  This corresponds to either the
     * maximum number of draw buffers or the maximum number of generic
@@ -3012,10 +3076,13 @@ assign_attribute_or_color_locations(void *mem_ctx,
       num_attr++;
    }
 
+   if (!do_assignment)
+      return true;
+
    if (target_index == MESA_SHADER_VERTEX) {
       unsigned total_attribs_size =
-         _mesa_bitcount(used_locations & SAFE_MASK_FROM_INDEX(max_index)) +
-         _mesa_bitcount(double_storage_locations);
+         util_bitcount(used_locations & SAFE_MASK_FROM_INDEX(max_index)) +
+         util_bitcount(double_storage_locations);
       if (total_attribs_size > max_index) {
          linker_error(prog,
                       "attempt to use %d vertex attribute slots only %d available ",
@@ -3078,8 +3145,8 @@ assign_attribute_or_color_locations(void *mem_ctx,
     */
    if (target_index == MESA_SHADER_VERTEX) {
       unsigned total_attribs_size =
-         _mesa_bitcount(used_locations & SAFE_MASK_FROM_INDEX(max_index)) +
-         _mesa_bitcount(double_storage_locations);
+         util_bitcount(used_locations & SAFE_MASK_FROM_INDEX(max_index)) +
+         util_bitcount(double_storage_locations);
       if (total_attribs_size > max_index) {
          linker_error(prog,
                       "attempt to use %d vertex attribute slots only %d available ",
@@ -3116,6 +3183,12 @@ match_explicit_outputs_to_inputs(gl_linked_shader *producer,
          const unsigned idx = var->data.location - VARYING_SLOT_VAR0;
          if (explicit_locations[idx][var->data.location_frac] == NULL)
             explicit_locations[idx][var->data.location_frac] = var;
+
+         /* Always match TCS outputs. They are shared by all invocations
+          * within a patch and can be used as shared memory.
+          */
+         if (producer->Stage == MESA_SHADER_TESS_CTRL)
+            var->data.is_unmatched_generic_inout = 0;
       }
    }
 
@@ -4337,9 +4410,7 @@ build_program_resource_list(struct gl_context *ctx,
    if (input_stage == MESA_SHADER_STAGES && output_stage == 0)
       return;
 
-   struct set *resource_set = _mesa_set_create(NULL,
-                                               _mesa_hash_pointer,
-                                               _mesa_key_pointer_equal);
+   struct set *resource_set = _mesa_pointer_set_create(NULL);
 
    /* Program interface needs to expose varyings in case of SSO. */
    if (shProg->SeparateShader) {
@@ -4580,6 +4651,44 @@ link_assign_subroutine_types(struct gl_shader_program *prog)
 }
 
 static void
+verify_subroutine_associated_funcs(struct gl_shader_program *prog)
+{
+   unsigned mask = prog->data->linked_stages;
+   while (mask) {
+      const int i = u_bit_scan(&mask);
+      gl_program *p = prog->_LinkedShaders[i]->Program;
+      glsl_symbol_table *symbols = prog->_LinkedShaders[i]->symbols;
+
+      /* Section 6.1.2 (Subroutines) of the GLSL 4.00 spec says:
+       *
+       *   "A program will fail to compile or link if any shader
+       *    or stage contains two or more functions with the same
+       *    name if the name is associated with a subroutine type."
+       */
+      for (unsigned j = 0; j < p->sh.NumSubroutineFunctions; j++) {
+         unsigned definitions = 0;
+         char *name = p->sh.SubroutineFunctions[j].name;
+         ir_function *fn = symbols->get_function(name);
+
+         /* Calculate number of function definitions with the same name */
+         foreach_in_list(ir_function_signature, sig, &fn->signatures) {
+            if (sig->is_defined) {
+               if (++definitions > 1) {
+                  linker_error(prog, "%s shader contains two or more function "
+                               "definitions with name `%s', which is "
+                               "associated with a subroutine type.\n",
+                               _mesa_shader_stage_to_string(i),
+                               fn->name);
+                  return;
+               }
+            }
+         }
+      }
+   }
+}
+
+
+static void
 set_always_active_io(exec_list *ir, ir_variable_mode io_mode)
 {
    assert(io_mode == ir_var_shader_in || io_mode == ir_var_shader_out);
@@ -4681,12 +4790,12 @@ link_varyings_and_uniforms(unsigned first, unsigned last,
    }
 
    if (!assign_attribute_or_color_locations(mem_ctx, prog, &ctx->Const,
-                                            MESA_SHADER_VERTEX)) {
+                                            MESA_SHADER_VERTEX, true)) {
       return false;
    }
 
    if (!assign_attribute_or_color_locations(mem_ctx, prog, &ctx->Const,
-                                            MESA_SHADER_FRAGMENT)) {
+                                            MESA_SHADER_FRAGMENT, true)) {
       return false;
    }
 
@@ -4964,6 +5073,7 @@ link_shaders(struct gl_context *ctx, struct gl_shader_program *prog)
 
    check_explicit_uniform_locations(ctx, prog);
    link_assign_subroutine_types(prog);
+   verify_subroutine_associated_funcs(prog);
 
    if (!prog->data->LinkStatus)
       goto done;
@@ -5012,6 +5122,12 @@ link_shaders(struct gl_context *ctx, struct gl_shader_program *prog)
          lower_named_interface_blocks(mem_ctx, prog->_LinkedShaders[i]);
    }
 
+   if (prog->IsES && prog->data->Version == 100)
+      if (!validate_invariant_builtins(prog,
+            prog->_LinkedShaders[MESA_SHADER_VERTEX],
+            prog->_LinkedShaders[MESA_SHADER_FRAGMENT]))
+         goto done;
+
    /* Implement the GLSL 1.30+ rule for discard vs infinite loops Do
     * it before optimization because we want most of the checks to get
     * dropped thanks to constant propagation.
@@ -5054,6 +5170,27 @@ link_shaders(struct gl_context *ctx, struct gl_shader_program *prog)
 
       if (ctx->Const.LowerTessLevel) {
          lower_tess_level(prog->_LinkedShaders[i]);
+      }
+
+      /* Section 13.46 (Vertex Attribute Aliasing) of the OpenGL ES 3.2
+       * specification says:
+       *
+       *    "In general, the behavior of GLSL ES should not depend on compiler
+       *    optimizations which might be implementation-dependent. Name matching
+       *    rules in most languages, including C++ from which GLSL ES is derived,
+       *    are based on declarations rather than use.
+       *
+       *    RESOLUTION: The existence of aliasing is determined by declarations
+       *    present after preprocessing."
+       *
+       * Because of this rule, we do a 'dry-run' of attribute assignment for
+       * vertex shader inputs here.
+       */
+      if (prog->IsES && i == MESA_SHADER_VERTEX) {
+         if (!assign_attribute_or_color_locations(mem_ctx, prog, &ctx->Const,
+                                                  MESA_SHADER_VERTEX, false)) {
+            goto done;
+         }
       }
 
       /* Call opts before lowering const arrays to uniforms so we can const

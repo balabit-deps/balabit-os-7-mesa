@@ -31,6 +31,9 @@
 #include <limits.h>
 #include <assert.h>
 #include <math.h>
+#include "util/u_math.h"
+
+#include "main/menums.h" /* BITFIELD64_MASK */
 
 nir_shader *
 nir_shader_create(void *mem_ctx,
@@ -122,11 +125,11 @@ nir_shader_add_variable(nir_shader *shader, nir_variable *var)
       assert(!"invalid mode");
       break;
 
-   case nir_var_local:
+   case nir_var_function_temp:
       assert(!"nir_shader_add_variable cannot be used for local variables");
       break;
 
-   case nir_var_global:
+   case nir_var_shader_temp:
       exec_list_push_tail(&shader->globals, &var->node);
       break;
 
@@ -139,13 +142,18 @@ nir_shader_add_variable(nir_shader *shader, nir_variable *var)
       break;
 
    case nir_var_uniform:
-   case nir_var_shader_storage:
+   case nir_var_mem_ubo:
+   case nir_var_mem_ssbo:
       exec_list_push_tail(&shader->uniforms, &var->node);
       break;
 
-   case nir_var_shared:
-      assert(shader->info.stage == MESA_SHADER_COMPUTE);
+   case nir_var_mem_shared:
+      assert(gl_shader_stage_is_compute(shader->info.stage));
       exec_list_push_tail(&shader->shared, &var->node);
+      break;
+
+   case nir_var_mem_global:
+      assert(!"nir_shader_add_variable cannot be used for global memory");
       break;
 
    case nir_var_system_value:
@@ -162,6 +170,7 @@ nir_variable_create(nir_shader *shader, nir_variable_mode mode,
    var->name = ralloc_strdup(var, name);
    var->type = type;
    var->data.mode = mode;
+   var->data.how_declared = nir_var_declared_normally;
 
    if ((mode == nir_var_shader_in &&
         shader->info.stage != MESA_SHADER_VERTEX) ||
@@ -184,7 +193,7 @@ nir_local_variable_create(nir_function_impl *impl,
    nir_variable *var = rzalloc(impl->function->shader, nir_variable);
    var->name = ralloc_strdup(var, name);
    var->type = type;
-   var->data.mode = nir_var_local;
+   var->data.mode = nir_var_function_temp;
 
    nir_function_impl_add_variable(impl, var);
 
@@ -203,6 +212,7 @@ nir_function_create(nir_shader *shader, const char *name)
    func->num_params = 0;
    func->params = NULL;
    func->impl = NULL;
+   func->is_entrypoint = false;
 
    return func;
 }
@@ -324,8 +334,7 @@ nir_block_create(nir_shader *shader)
    cf_init(&block->cf_node, nir_cf_node_block);
 
    block->successors[0] = block->successors[1] = NULL;
-   block->predecessors = _mesa_set_create(block, _mesa_hash_pointer,
-                                          _mesa_key_pointer_equal);
+   block->predecessors = _mesa_pointer_set_create(block);
    block->imm_dom = NULL;
    /* XXX maybe it would be worth it to defer allocation?  This
     * way it doesn't get allocated for shader refs that never run
@@ -335,8 +344,7 @@ nir_block_create(nir_shader *shader)
     * which is later used to do state specific lowering and futher
     * opt.  Do any of the references not need dominance metadata?
     */
-   block->dom_frontier = _mesa_set_create(block, _mesa_hash_pointer,
-                                          _mesa_key_pointer_equal);
+   block->dom_frontier = _mesa_pointer_set_create(block);
 
    exec_list_make_empty(&block->instr_list);
 
@@ -455,7 +463,8 @@ nir_deref_instr_create(nir_shader *shader, nir_deref_type deref_type)
    if (deref_type != nir_deref_type_var)
       src_init(&instr->parent);
 
-   if (deref_type == nir_deref_type_array)
+   if (deref_type == nir_deref_type_array ||
+       deref_type == nir_deref_type_ptr_as_array)
       src_init(&instr->arr.index);
 
    dest_init(&instr->dest);
@@ -634,6 +643,7 @@ const_value_int(int64_t i, unsigned bit_size)
 {
    nir_const_value v;
    switch (bit_size) {
+   case 1:  v.b[0]   = i & 1;  break;
    case 8:  v.i8[0]  = i;  break;
    case 16: v.i16[0] = i;  break;
    case 32: v.i32[0] = i;  break;
@@ -1061,7 +1071,8 @@ visit_deref_instr_src(nir_deref_instr *instr,
          return false;
    }
 
-   if (instr->deref_type == nir_deref_type_array) {
+   if (instr->deref_type == nir_deref_type_array ||
+       instr->deref_type == nir_deref_type_ptr_as_array) {
       if (!visit_src(&instr->arr.index, cb, state))
          return false;
    }
@@ -1192,6 +1203,98 @@ nir_foreach_src(nir_instr *instr, nir_foreach_src_cb cb, void *state)
    dest_state.state = state;
    dest_state.cb = cb;
    return nir_foreach_dest(instr, visit_dest_indirect, &dest_state);
+}
+
+int64_t
+nir_src_comp_as_int(nir_src src, unsigned comp)
+{
+   assert(nir_src_is_const(src));
+   nir_load_const_instr *load = nir_instr_as_load_const(src.ssa->parent_instr);
+
+   assert(comp < load->def.num_components);
+   switch (load->def.bit_size) {
+   /* int1_t uses 0/-1 convention */
+   case 1:  return -(int)load->value.b[comp];
+   case 8:  return load->value.i8[comp];
+   case 16: return load->value.i16[comp];
+   case 32: return load->value.i32[comp];
+   case 64: return load->value.i64[comp];
+   default:
+      unreachable("Invalid bit size");
+   }
+}
+
+uint64_t
+nir_src_comp_as_uint(nir_src src, unsigned comp)
+{
+   assert(nir_src_is_const(src));
+   nir_load_const_instr *load = nir_instr_as_load_const(src.ssa->parent_instr);
+
+   assert(comp < load->def.num_components);
+   switch (load->def.bit_size) {
+   case 1:  return load->value.b[comp];
+   case 8:  return load->value.u8[comp];
+   case 16: return load->value.u16[comp];
+   case 32: return load->value.u32[comp];
+   case 64: return load->value.u64[comp];
+   default:
+      unreachable("Invalid bit size");
+   }
+}
+
+bool
+nir_src_comp_as_bool(nir_src src, unsigned comp)
+{
+   int64_t i = nir_src_comp_as_int(src, comp);
+
+   /* Booleans of any size use 0/-1 convention */
+   assert(i == 0 || i == -1);
+
+   return i;
+}
+
+double
+nir_src_comp_as_float(nir_src src, unsigned comp)
+{
+   assert(nir_src_is_const(src));
+   nir_load_const_instr *load = nir_instr_as_load_const(src.ssa->parent_instr);
+
+   assert(comp < load->def.num_components);
+   switch (load->def.bit_size) {
+   case 16: return _mesa_half_to_float(load->value.u16[comp]);
+   case 32: return load->value.f32[comp];
+   case 64: return load->value.f64[comp];
+   default:
+      unreachable("Invalid bit size");
+   }
+}
+
+int64_t
+nir_src_as_int(nir_src src)
+{
+   assert(nir_src_num_components(src) == 1);
+   return nir_src_comp_as_int(src, 0);
+}
+
+uint64_t
+nir_src_as_uint(nir_src src)
+{
+   assert(nir_src_num_components(src) == 1);
+   return nir_src_comp_as_uint(src, 0);
+}
+
+bool
+nir_src_as_bool(nir_src src)
+{
+   assert(nir_src_num_components(src) == 1);
+   return nir_src_comp_as_bool(src, 0);
+}
+
+double
+nir_src_as_float(nir_src src)
+{
+   assert(nir_src_num_components(src) == 1);
+   return nir_src_comp_as_float(src, 0);
 }
 
 nir_const_value *
@@ -1434,13 +1537,7 @@ nir_ssa_def_components_read(const nir_ssa_def *def)
          nir_alu_src *alu_src = exec_node_data(nir_alu_src, use, src);
          int src_idx = alu_src - &alu->src[0];
          assert(src_idx >= 0 && src_idx < nir_op_infos[alu->op].num_inputs);
-
-         for (unsigned c = 0; c < NIR_MAX_VEC_COMPONENTS; c++) {
-            if (!nir_alu_instr_channel_used(alu, src_idx, c))
-               continue;
-
-            read_mask |= (1 << alu_src->swizzle[c]);
-         }
+         read_mask |= nir_alu_instr_src_read_mask(alu, src_idx);
       } else {
          return (1 << def->num_components) - 1;
       }
@@ -1637,7 +1734,10 @@ nir_index_blocks(nir_function_impl *impl)
       block->index = index++;
    }
 
-   impl->num_blocks = index;
+   /* The end_block isn't really part of the program, which is why its index
+    * is >= num_blocks.
+    */
+   impl->num_blocks = impl->end_block->index = index;
 }
 
 static bool
@@ -1845,4 +1945,48 @@ nir_system_value_from_intrinsic(nir_intrinsic_op intrin)
    default:
       unreachable("intrinsic doesn't produce a system value");
    }
+}
+
+/* OpenGL utility method that remaps the location attributes if they are
+ * doubles. Not needed for vulkan due the differences on the input location
+ * count for doubles on vulkan vs OpenGL
+ *
+ * The bitfield returned in dual_slot is one bit for each double input slot in
+ * the original OpenGL single-slot input numbering.  The mapping from old
+ * locations to new locations is as follows:
+ *
+ *    new_loc = loc + util_bitcount(dual_slot & BITFIELD64_MASK(loc))
+ */
+void
+nir_remap_dual_slot_attributes(nir_shader *shader, uint64_t *dual_slot)
+{
+   assert(shader->info.stage == MESA_SHADER_VERTEX);
+
+   *dual_slot = 0;
+   nir_foreach_variable(var, &shader->inputs) {
+      if (glsl_type_is_dual_slot(glsl_without_array(var->type))) {
+         unsigned slots = glsl_count_attribute_slots(var->type, true);
+         *dual_slot |= BITFIELD64_MASK(slots) << var->data.location;
+      }
+   }
+
+   nir_foreach_variable(var, &shader->inputs) {
+      var->data.location +=
+         util_bitcount64(*dual_slot & BITFIELD64_MASK(var->data.location));
+   }
+}
+
+/* Returns an attribute mask that has been re-compacted using the given
+ * dual_slot mask.
+ */
+uint64_t
+nir_get_single_slot_attribs_mask(uint64_t attribs, uint64_t dual_slot)
+{
+   while (dual_slot) {
+      unsigned loc = u_bit_scan64(&dual_slot);
+      /* mask of all bits up to and including loc */
+      uint64_t mask = BITFIELD64_MASK(loc + 1);
+      attribs = (attribs & mask) | ((attribs & ~mask) >> 1);
+   }
+   return attribs;
 }

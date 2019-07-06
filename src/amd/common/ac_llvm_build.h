@@ -34,14 +34,20 @@
 extern "C" {
 #endif
 
-#define HAVE_32BIT_POINTERS (HAVE_LLVM >= 0x0700)
-
 enum {
-	/* CONST is the only address space that selects SMEM loads */
-	AC_CONST_ADDR_SPACE = HAVE_LLVM >= 0x700 ? 4 : 2,
-	AC_LOCAL_ADDR_SPACE = 3,
-	AC_CONST_32BIT_ADDR_SPACE = 6, /* same as CONST, but the pointer type has 32 bits */
+	AC_ADDR_SPACE_FLAT = 0, /* Slower than global. */
+	AC_ADDR_SPACE_GLOBAL = 1,
+	AC_ADDR_SPACE_GDS = 2,
+	AC_ADDR_SPACE_LDS = 3,
+	AC_ADDR_SPACE_CONST = 4, /* Global allowing SMEM. */
+	AC_ADDR_SPACE_CONST_32BIT = 6, /* same as CONST, but the pointer type has 32 bits */
 };
+
+/* Combine these with & instead of |. */
+#define NOOP_WAITCNT	0xcf7f
+#define LGKM_CNT	0xc07f
+#define EXP_CNT		0xcf0f
+#define VM_CNT		0x0f70 /* On GFX9, vmcnt has 6 bits in [0:3] and [14:15] */
 
 struct ac_llvm_flow;
 
@@ -68,6 +74,8 @@ struct ac_llvm_context {
 	LLVMTypeRef v4f32;
 	LLVMTypeRef v8i32;
 
+	LLVMValueRef i16_0;
+	LLVMValueRef i16_1;
 	LLVMValueRef i32_0;
 	LLVMValueRef i32_1;
 	LLVMValueRef i64_0;
@@ -118,6 +126,7 @@ unsigned ac_get_type_size(LLVMTypeRef type);
 
 LLVMTypeRef ac_to_integer_type(struct ac_llvm_context *ctx, LLVMTypeRef t);
 LLVMValueRef ac_to_integer(struct ac_llvm_context *ctx, LLVMValueRef v);
+LLVMValueRef ac_to_integer_or_pointer(struct ac_llvm_context *ctx, LLVMValueRef v);
 LLVMTypeRef ac_to_float_type(struct ac_llvm_context *ctx, LLVMTypeRef t);
 LLVMValueRef ac_to_float(struct ac_llvm_context *ctx, LLVMValueRef v);
 
@@ -133,6 +142,7 @@ ac_build_phi(struct ac_llvm_context *ctx, LLVMTypeRef type,
 	     unsigned count_incoming, LLVMValueRef *values,
 	     LLVMBasicBlockRef *blocks);
 
+void ac_build_s_barrier(struct ac_llvm_context *ctx);
 void ac_build_optimization_barrier(struct ac_llvm_context *ctx,
 				   LLVMValueRef *pvgpr);
 
@@ -167,11 +177,29 @@ LLVMValueRef ac_build_expand(struct ac_llvm_context *ctx,
 LLVMValueRef ac_build_expand_to_vec4(struct ac_llvm_context *ctx,
 				     LLVMValueRef value,
 				     unsigned num_channels);
+LLVMValueRef ac_build_round(struct ac_llvm_context *ctx, LLVMValueRef value);
 
 LLVMValueRef
 ac_build_fdiv(struct ac_llvm_context *ctx,
 	      LLVMValueRef num,
 	      LLVMValueRef den);
+
+LLVMValueRef ac_build_fast_udiv(struct ac_llvm_context *ctx,
+				LLVMValueRef num,
+				LLVMValueRef multiplier,
+				LLVMValueRef pre_shift,
+				LLVMValueRef post_shift,
+				LLVMValueRef increment);
+LLVMValueRef ac_build_fast_udiv_nuw(struct ac_llvm_context *ctx,
+				    LLVMValueRef num,
+				    LLVMValueRef multiplier,
+				    LLVMValueRef pre_shift,
+				    LLVMValueRef post_shift,
+				    LLVMValueRef increment);
+LLVMValueRef ac_build_fast_udiv_u31_d_not_one(struct ac_llvm_context *ctx,
+					      LLVMValueRef num,
+					      LLVMValueRef multiplier,
+					      LLVMValueRef post_shift);
 
 void
 ac_prepare_cube_coords(struct ac_llvm_context *ctx,
@@ -189,6 +217,14 @@ ac_build_fs_interp(struct ac_llvm_context *ctx,
 		   LLVMValueRef j);
 
 LLVMValueRef
+ac_build_fs_interp_f16(struct ac_llvm_context *ctx,
+		       LLVMValueRef llvm_chan,
+		       LLVMValueRef attr_number,
+		       LLVMValueRef params,
+		       LLVMValueRef i,
+		       LLVMValueRef j);
+
+LLVMValueRef
 ac_build_fs_interp_mov(struct ac_llvm_context *ctx,
 		       LLVMValueRef parameter,
 		       LLVMValueRef llvm_chan,
@@ -196,9 +232,16 @@ ac_build_fs_interp_mov(struct ac_llvm_context *ctx,
 		       LLVMValueRef params);
 
 LLVMValueRef
+ac_build_gep_ptr(struct ac_llvm_context *ctx,
+	         LLVMValueRef base_ptr,
+	         LLVMValueRef index);
+
+LLVMValueRef
 ac_build_gep0(struct ac_llvm_context *ctx,
 	      LLVMValueRef base_ptr,
 	      LLVMValueRef index);
+LLVMValueRef ac_build_pointer_add(struct ac_llvm_context *ctx, LLVMValueRef ptr,
+				  LLVMValueRef index);
 
 void
 ac_build_indexed_store(struct ac_llvm_context *ctx,
@@ -210,6 +253,8 @@ LLVMValueRef ac_build_load(struct ac_llvm_context *ctx, LLVMValueRef base_ptr,
 LLVMValueRef ac_build_load_invariant(struct ac_llvm_context *ctx,
 				     LLVMValueRef base_ptr, LLVMValueRef index);
 LLVMValueRef ac_build_load_to_sgpr(struct ac_llvm_context *ctx,
+				   LLVMValueRef base_ptr, LLVMValueRef index);
+LLVMValueRef ac_build_load_to_sgpr_uint_wraparound(struct ac_llvm_context *ctx,
 				   LLVMValueRef base_ptr, LLVMValueRef index);
 
 void
@@ -261,7 +306,8 @@ ac_build_tbuffer_load_short(struct ac_llvm_context *ctx,
 			    LLVMValueRef vindex,
 			    LLVMValueRef voffset,
 				LLVMValueRef soffset,
-				LLVMValueRef immoffset);
+				LLVMValueRef immoffset,
+				LLVMValueRef glc);
 
 LLVMValueRef
 ac_get_thread_id(struct ac_llvm_context *ctx);
@@ -400,6 +446,10 @@ void ac_build_kill_if_false(struct ac_llvm_context *ctx, LLVMValueRef i1);
 LLVMValueRef ac_build_bfe(struct ac_llvm_context *ctx, LLVMValueRef input,
 			  LLVMValueRef offset, LLVMValueRef width,
 			  bool is_signed);
+LLVMValueRef ac_build_imad(struct ac_llvm_context *ctx, LLVMValueRef s0,
+			   LLVMValueRef s1, LLVMValueRef s2);
+LLVMValueRef ac_build_fmad(struct ac_llvm_context *ctx, LLVMValueRef s0,
+			   LLVMValueRef s1, LLVMValueRef s2);
 
 void ac_build_waitcnt(struct ac_llvm_context *ctx, unsigned simm16);
 
@@ -411,6 +461,11 @@ LLVMValueRef ac_build_isign(struct ac_llvm_context *ctx, LLVMValueRef src0,
 
 LLVMValueRef ac_build_fsign(struct ac_llvm_context *ctx, LLVMValueRef src0,
 			    unsigned bitsize);
+
+LLVMValueRef ac_build_bit_count(struct ac_llvm_context *ctx, LLVMValueRef src0);
+
+LLVMValueRef ac_build_bitfield_reverse(struct ac_llvm_context *ctx,
+				       LLVMValueRef src0);
 
 void ac_optimize_vs_outputs(struct ac_llvm_context *ac,
 			    LLVMValueRef main_fn,
@@ -438,6 +493,7 @@ void ac_build_continue(struct ac_llvm_context *ctx);
 void ac_build_else(struct ac_llvm_context *ctx, int lable_id);
 void ac_build_endif(struct ac_llvm_context *ctx, int lable_id);
 void ac_build_endloop(struct ac_llvm_context *ctx, int lable_id);
+void ac_build_ifcc(struct ac_llvm_context *ctx, LLVMValueRef cond, int label_id);
 void ac_build_if(struct ac_llvm_context *ctx, LLVMValueRef value,
 		 int lable_id);
 void ac_build_uif(struct ac_llvm_context *ctx, LLVMValueRef value,
@@ -480,6 +536,42 @@ ac_build_exclusive_scan(struct ac_llvm_context *ctx, LLVMValueRef src, nir_op op
 
 LLVMValueRef
 ac_build_reduce(struct ac_llvm_context *ctx, LLVMValueRef src, nir_op op, unsigned cluster_size);
+
+/**
+ * Common arguments for a scan/reduce operation that accumulates per-wave
+ * values across an entire workgroup, while respecting the order of waves.
+ */
+struct ac_wg_scan {
+	bool enable_reduce;
+	bool enable_exclusive;
+	bool enable_inclusive;
+	nir_op op;
+	LLVMValueRef src; /* clobbered! */
+	LLVMValueRef result_reduce;
+	LLVMValueRef result_exclusive;
+	LLVMValueRef result_inclusive;
+	LLVMValueRef extra;
+	LLVMValueRef waveidx;
+	LLVMValueRef numwaves; /* only needed for "reduce" operations */
+
+	/* T addrspace(LDS) pointer to the same type as value, at least maxwaves entries */
+	LLVMValueRef scratch;
+	unsigned maxwaves;
+};
+
+void
+ac_build_wg_wavescan_top(struct ac_llvm_context *ctx, struct ac_wg_scan *ws);
+void
+ac_build_wg_wavescan_bottom(struct ac_llvm_context *ctx, struct ac_wg_scan *ws);
+void
+ac_build_wg_wavescan(struct ac_llvm_context *ctx, struct ac_wg_scan *ws);
+
+void
+ac_build_wg_scan_top(struct ac_llvm_context *ctx, struct ac_wg_scan *ws);
+void
+ac_build_wg_scan_bottom(struct ac_llvm_context *ctx, struct ac_wg_scan *ws);
+void
+ac_build_wg_scan(struct ac_llvm_context *ctx, struct ac_wg_scan *ws);
 
 LLVMValueRef
 ac_build_quad_swizzle(struct ac_llvm_context *ctx, LLVMValueRef src,

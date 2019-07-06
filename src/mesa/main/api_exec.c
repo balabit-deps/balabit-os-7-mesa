@@ -55,6 +55,7 @@
 #include "main/depth.h"
 #include "main/debug_output.h"
 #include "main/dlist.h"
+#include "main/draw.h"
 #include "main/drawpix.h"
 #include "main/drawtex.h"
 #include "main/rastpos.h"
@@ -115,7 +116,6 @@
 #include "main/formatquery.h"
 #include "main/dispatch.h"
 #include "main/vdpau.h"
-#include "vbo/vbo.h"
 
 
 /**
@@ -136,7 +136,7 @@ _mesa_initialize_exec_table(struct gl_context *ctx)
 
    assert(ctx->Version > 0);
 
-   vbo_initialize_exec_dispatch(ctx, exec);
+   _mesa_initialize_exec_dispatch(ctx, exec);
 
    if (!_mesa_is_no_error_enabled(ctx) && (_mesa_is_desktop_gl(ctx) || (ctx->API == API_OPENGLES2 && ctx->Version >= 30))) {
       SET_BeginTransformFeedback(exec, _mesa_BeginTransformFeedback);
@@ -399,6 +399,8 @@ _mesa_initialize_exec_table(struct gl_context *ctx)
       SET_BeginQueryIndexed(exec, _mesa_BeginQueryIndexed);
       SET_BindBuffersBase(exec, _mesa_BindBuffersBase);
       SET_BindBuffersRange(exec, _mesa_BindBuffersRange);
+      SET_BindFramebufferEXT(exec, _mesa_BindFramebufferEXT);
+      SET_BindRenderbufferEXT(exec, _mesa_BindRenderbufferEXT);
       SET_BufferPageCommitmentARB(exec, _mesa_BufferPageCommitmentARB);
       SET_ClampColor(exec, _mesa_ClampColor);
       SET_ClearColorIiEXT(exec, _mesa_ClearColorIiEXT);
@@ -554,6 +556,7 @@ _mesa_initialize_exec_table(struct gl_context *ctx)
       SET_IsSampler(exec, _mesa_IsSampler);
       SET_IsSync(exec, _mesa_IsSync);
       SET_IsTransformFeedback(exec, _mesa_IsTransformFeedback);
+      SET_NamedRenderbufferStorageMultisampleAdvancedAMD(exec, _mesa_NamedRenderbufferStorageMultisampleAdvancedAMD);
       SET_ProgramUniform1ui(exec, _mesa_ProgramUniform1ui);
       SET_ProgramUniform1uiv(exec, _mesa_ProgramUniform1uiv);
       SET_ProgramUniform2ui(exec, _mesa_ProgramUniform2ui);
@@ -562,7 +565,7 @@ _mesa_initialize_exec_table(struct gl_context *ctx)
       SET_ProgramUniform3uiv(exec, _mesa_ProgramUniform3uiv);
       SET_ProgramUniform4ui(exec, _mesa_ProgramUniform4ui);
       SET_ProgramUniform4uiv(exec, _mesa_ProgramUniform4uiv);
-      SET_RenderbufferStorageMultisample(exec, _mesa_RenderbufferStorageMultisample);
+      SET_RenderbufferStorageMultisampleAdvancedAMD(exec, _mesa_RenderbufferStorageMultisampleAdvancedAMD);
       SET_SamplerParameterIiv(exec, _mesa_SamplerParameterIiv);
       SET_SamplerParameterIuiv(exec, _mesa_SamplerParameterIuiv);
       SET_SamplerParameterf(exec, _mesa_SamplerParameterf);
@@ -788,6 +791,7 @@ _mesa_initialize_exec_table(struct gl_context *ctx)
       SET_ProgramUniformMatrix4x3fv(exec, _mesa_ProgramUniformMatrix4x3fv);
       SET_QueryCounter(exec, _mesa_QueryCounter);
       SET_ReleaseShaderCompiler(exec, _mesa_ReleaseShaderCompiler);
+      SET_RenderbufferStorageMultisample(exec, _mesa_RenderbufferStorageMultisample);
       SET_SelectPerfMonitorCountersAMD(exec, _mesa_SelectPerfMonitorCountersAMD);
       SET_ShaderBinary(exec, _mesa_ShaderBinary);
       SET_Uniform1f(exec, _mesa_Uniform1f);
@@ -1124,6 +1128,9 @@ _mesa_initialize_exec_table(struct gl_context *ctx)
    if (ctx->API == API_OPENGLES || ctx->API == API_OPENGLES2) {
       SET_DiscardFramebufferEXT(exec, _mesa_DiscardFramebufferEXT);
    }
+   if (ctx->API == API_OPENGLES2) {
+      SET_FramebufferTexture2DMultisampleEXT(exec, _mesa_FramebufferTexture2DMultisampleEXT);
+   }
    if (ctx->API == API_OPENGL_COMPAT) {
       SET_Accum(exec, _mesa_Accum);
       SET_ActiveStencilFaceEXT(exec, _mesa_ActiveStencilFaceEXT);
@@ -1133,9 +1140,7 @@ _mesa_initialize_exec_table(struct gl_context *ctx)
       SET_AreTexturesResident(exec, _mesa_AreTexturesResident);
       SET_BeginFragmentShaderATI(exec, _mesa_BeginFragmentShaderATI);
       SET_BindFragmentShaderATI(exec, _mesa_BindFragmentShaderATI);
-      SET_BindFramebufferEXT(exec, _mesa_BindFramebufferEXT);
       SET_BindProgramARB(exec, _mesa_BindProgramARB);
-      SET_BindRenderbufferEXT(exec, _mesa_BindRenderbufferEXT);
       SET_Bitmap(exec, _mesa_Bitmap);
       SET_CallList(exec, _mesa_CallList);
       SET_CallLists(exec, _mesa_CallLists);

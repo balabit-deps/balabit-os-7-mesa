@@ -26,6 +26,7 @@ include Makefile.sources
 AM_CFLAGS = \
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/src/ \
+	-I$(top_builddir)/src/ \
 	-I$(top_srcdir)/src/mapi \
 	-I$(top_srcdir)/src/mesa/ \
 	-I$(top_srcdir)/src/gallium/include \
@@ -33,6 +34,8 @@ AM_CFLAGS = \
 	-I$(top_builddir)/src/util \
 	-I$(top_srcdir)/src/mesa/drivers/dri/common \
 	-I$(top_srcdir)/src/gtest/include \
+	-I$(top_builddir)/src/compiler \
+	-I$(top_srcdir)/src/compiler \
 	-I$(top_builddir)/src/compiler/glsl \
 	-I$(top_builddir)/src/compiler/nir \
 	-I$(top_srcdir)/src/compiler/nir \
@@ -115,7 +118,7 @@ EXTRA_DIST = \
 	meson.build
 
 brw_oa_metrics.c: brw_oa.py $(i965_oa_xml_FILES)
-	$(PYTHON2) $(PYTHON_FLAGS) $(srcdir)/brw_oa.py \
+	$(PYTHON) $(PYTHON_FLAGS) $(srcdir)/brw_oa.py \
 	--code=$(builddir)/brw_oa_metrics.c \
 	--header=$(builddir)/brw_oa_metrics.h \
 	$(i965_oa_xml_FILES:%=$(srcdir)/%)

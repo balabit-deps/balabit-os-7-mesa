@@ -410,6 +410,17 @@ static void dd_context_set_tess_state(struct pipe_context *_pipe,
    pipe->set_tess_state(pipe, default_outer_level, default_inner_level);
 }
 
+static void dd_context_set_window_rectangles(struct pipe_context *_pipe,
+                                             boolean include,
+                                             unsigned num_rectangles,
+                                             const struct pipe_scissor_state *rects)
+{
+   struct dd_context *dctx = dd_context(_pipe);
+   struct pipe_context *pipe = dctx->pipe;
+
+   pipe->set_window_rectangles(pipe, include, num_rectangles, rects);
+}
+
 
 /********************************************************************
  * views
@@ -585,7 +596,6 @@ dd_context_destroy(struct pipe_context *_pipe)
    cnd_destroy(&dctx->cond);
 
    assert(list_empty(&dctx->records));
-   assert(!dctx->record_pending);
 
    if (pipe->set_log_context) {
       pipe->set_log_context(pipe, NULL);
@@ -748,6 +758,16 @@ dd_context_make_image_handle_resident(struct pipe_context *_pipe,
    pipe->make_image_handle_resident(pipe, handle, access, resident);
 }
 
+static void
+dd_context_set_context_param(struct pipe_context *_pipe,
+                             enum pipe_context_param param,
+                             unsigned value)
+{
+   struct pipe_context *pipe = dd_context(_pipe)->pipe;
+
+   pipe->set_context_param(pipe, param, value);
+}
+
 struct pipe_context *
 dd_context_create(struct dd_screen *dscreen, struct pipe_context *pipe)
 {
@@ -824,6 +844,7 @@ dd_context_create(struct dd_screen *dscreen, struct pipe_context *pipe)
    CTX_INIT(set_shader_buffers);
    CTX_INIT(set_shader_images);
    CTX_INIT(set_vertex_buffers);
+   CTX_INIT(set_window_rectangles);
    CTX_INIT(create_stream_output_target);
    CTX_INIT(stream_output_target_destroy);
    CTX_INIT(set_stream_output_targets);
@@ -850,6 +871,7 @@ dd_context_create(struct dd_screen *dscreen, struct pipe_context *pipe)
    CTX_INIT(create_image_handle);
    CTX_INIT(delete_image_handle);
    CTX_INIT(make_image_handle_resident);
+   CTX_INIT(set_context_param);
 
    dd_init_draw_functions(dctx);
 

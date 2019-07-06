@@ -1192,7 +1192,6 @@ try_pbo_upload_common(struct gl_context *ctx,
       return false;
 
    cso_save_state(cso, (CSO_BIT_FRAGMENT_SAMPLER_VIEWS |
-                        CSO_BIT_FRAGMENT_SAMPLERS |
                         CSO_BIT_VERTEX_ELEMENTS |
                         CSO_BIT_AUX_VERTEX_BUFFER_SLOT |
                         CSO_BIT_FRAMEBUFFER |
@@ -1216,8 +1215,6 @@ try_pbo_upload_common(struct gl_context *ctx,
    {
       struct pipe_sampler_view templ;
       struct pipe_sampler_view *sampler_view;
-      struct pipe_sampler_state sampler = {0};
-      const struct pipe_sampler_state *samplers[1] = {&sampler};
 
       memset(&templ, 0, sizeof(templ));
       templ.target = PIPE_BUFFER;
@@ -1237,8 +1234,6 @@ try_pbo_upload_common(struct gl_context *ctx,
       cso_set_sampler_views(cso, PIPE_SHADER_FRAGMENT, 1, &sampler_view);
 
       pipe_sampler_view_reference(&sampler_view, NULL);
-
-      cso_set_samplers(cso, PIPE_SHADER_FRAGMENT, 1, samplers);
    }
 
    /* Framebuffer_state */
@@ -1248,11 +1243,9 @@ try_pbo_upload_common(struct gl_context *ctx,
       fb.width = surface->width;
       fb.height = surface->height;
       fb.nr_cbufs = 1;
-      pipe_surface_reference(&fb.cbufs[0], surface);
+      fb.cbufs[0] = surface;
 
       cso_set_framebuffer(cso, &fb);
-
-      pipe_surface_reference(&fb.cbufs[0], NULL);
    }
 
    cso_set_viewport_dims(cso, surface->width, surface->height, FALSE);
@@ -1392,6 +1385,7 @@ try_pbo_upload(struct gl_context *ctx, GLuint dims,
    return success;
 }
 
+
 static void
 st_TexSubImage(struct gl_context *ctx, GLuint dims,
                struct gl_texture_image *texImage,
@@ -1417,6 +1411,7 @@ st_TexSubImage(struct gl_context *ctx, GLuint dims,
    GLubyte *map;
    unsigned dstz = texImage->Face + texImage->TexObject->MinLayer;
    unsigned dst_level = 0;
+   bool throttled = false;
 
    st_flush_bitmap_cache(st);
    st_invalidate_readpix_cache(st);
@@ -1455,6 +1450,10 @@ st_TexSubImage(struct gl_context *ctx, GLuint dims,
          height = 1;
          layer_stride = stride;
       }
+
+      util_throttle_memory_usage(pipe, &st->throttle,
+                                 width * height * depth *
+                                 util_format_get_blocksize(dst->format));
 
       u_box_3d(xoffset, yoffset, zoffset + dstz, width, height, depth, &box);
       pipe->texture_subdata(pipe, dst, dst_level, 0,
@@ -1561,6 +1560,11 @@ st_TexSubImage(struct gl_context *ctx, GLuint dims,
       goto fallback;
    }
 
+   util_throttle_memory_usage(pipe, &st->throttle,
+                              width * height * depth *
+                              util_format_get_blocksize(src_templ.format));
+   throttled = true;
+
    /* Create the source texture. */
    src = screen->resource_create(screen, &src_templ);
    if (!src) {
@@ -1651,6 +1655,11 @@ st_TexSubImage(struct gl_context *ctx, GLuint dims,
    return;
 
 fallback:
+   if (!throttled) {
+      util_throttle_memory_usage(pipe, &st->throttle,
+                                 width * height * depth *
+                                 _mesa_get_format_bytes(texImage->TexFormat));
+   }
    _mesa_store_texsubimage(ctx, dims, texImage, xoffset, yoffset, zoffset,
                            width, height, depth, format, type, pixels,
                            unpack);
@@ -2043,7 +2052,7 @@ st_GetTexSubImage(struct gl_context * ctx,
       }
 
       dst_format = st_choose_format(st, dst_glformat, format, type,
-                                    pipe_target, 0, bind, FALSE);
+                                    pipe_target, 0, 0, bind, FALSE);
 
       if (dst_format == PIPE_FORMAT_NONE) {
          /* unable to get an rgba format!?! */
@@ -3221,7 +3230,7 @@ st_NewImageHandle(struct gl_context *ctx, struct gl_image_unit *imgObj)
    struct pipe_context *pipe = st->pipe;
    struct pipe_image_view image;
 
-   st_convert_image(st, imgObj, &image);
+   st_convert_image(st, imgObj, &image, GL_READ_WRITE);
 
    return pipe->create_image_handle(pipe, &image);
 }

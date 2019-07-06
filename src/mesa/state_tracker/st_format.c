@@ -169,6 +169,8 @@ st_mesa_format_to_pipe_format(const struct st_context *st,
       return PIPE_FORMAT_AL88_SRGB;
    case MESA_FORMAT_L_SRGB8:
       return PIPE_FORMAT_L8_SRGB;
+   case MESA_FORMAT_R_SRGB8:
+      return PIPE_FORMAT_R8_SRGB;
    case MESA_FORMAT_BGR_SRGB8:
       return PIPE_FORMAT_R8G8B8_SRGB;
    case MESA_FORMAT_A8B8G8R8_SRGB:
@@ -719,6 +721,8 @@ st_pipe_format_to_mesa_format(enum pipe_format format)
       return MESA_FORMAT_A8L8_SRGB;
    case PIPE_FORMAT_L8_SRGB:
       return MESA_FORMAT_L_SRGB8;
+   case PIPE_FORMAT_R8_SRGB:
+      return MESA_FORMAT_R_SRGB8;
    case PIPE_FORMAT_R8G8B8_SRGB:
       return MESA_FORMAT_BGR_SRGB8;
    case PIPE_FORMAT_ABGR8888_SRGB:
@@ -1423,6 +1427,10 @@ static const struct format_mapping format_map[] = {
         0 },
       { PIPE_FORMAT_L8_SRGB, DEFAULT_SRGBA_FORMATS }
    },
+   {
+      { GL_SR8_EXT, 0 },
+      { PIPE_FORMAT_R8_SRGB, 0 }
+   },
 
    /* 16-bit float formats */
    {
@@ -2053,13 +2061,15 @@ find_supported_format(struct pipe_screen *screen,
                       const enum pipe_format formats[],
                       enum pipe_texture_target target,
                       unsigned sample_count,
+                      unsigned storage_sample_count,
                       unsigned bindings,
                       boolean allow_dxt)
 {
    uint i;
    for (i = 0; formats[i]; i++) {
       if (screen->is_format_supported(screen, formats[i], target,
-                                      sample_count, sample_count, bindings)) {
+                                      sample_count, storage_sample_count,
+                                      bindings)) {
          if (!allow_dxt && util_format_is_s3tc(formats[i])) {
             /* we can't return a dxt format, continue searching */
             continue;
@@ -2164,6 +2174,7 @@ enum pipe_format
 st_choose_format(struct st_context *st, GLenum internalFormat,
                  GLenum format, GLenum type,
                  enum pipe_texture_target target, unsigned sample_count,
+                 unsigned storage_sample_count,
                  unsigned bindings, boolean allow_dxt)
 {
    struct pipe_screen *screen = st->pipe->screen;
@@ -2193,7 +2204,7 @@ st_choose_format(struct st_context *st, GLenum internalFormat,
    pf = find_exact_format(internalFormat, format, type);
    if (pf != PIPE_FORMAT_NONE &&
        screen->is_format_supported(screen, pf, target, sample_count,
-                                   sample_count, bindings)) {
+                                   storage_sample_count, bindings)) {
       goto success;
    }
 
@@ -2219,7 +2230,8 @@ st_choose_format(struct st_context *st, GLenum internalFormat,
              * which is supported by the driver.
              */
             pf = find_supported_format(screen, mapping->pipeFormats,
-                                       target, sample_count, bindings,
+                                       target, sample_count,
+                                       storage_sample_count, bindings,
                                        allow_dxt);
             goto success;
          }
@@ -2247,7 +2259,8 @@ success:
  */
 enum pipe_format
 st_choose_renderbuffer_format(struct st_context *st,
-                              GLenum internalFormat, unsigned sample_count)
+                              GLenum internalFormat, unsigned sample_count,
+                              unsigned storage_sample_count)
 {
    unsigned bindings;
    if (_mesa_is_depth_or_stencil_format(internalFormat))
@@ -2255,7 +2268,8 @@ st_choose_renderbuffer_format(struct st_context *st,
    else
       bindings = PIPE_BIND_RENDER_TARGET;
    return st_choose_format(st, internalFormat, GL_NONE, GL_NONE,
-                           PIPE_TEXTURE_2D, sample_count, bindings, FALSE);
+                           PIPE_TEXTURE_2D, sample_count,
+                           storage_sample_count, bindings, FALSE);
 }
 
 
@@ -2342,6 +2356,8 @@ st_ChooseTextureFormat(struct gl_context *ctx, GLenum target,
       bindings |= PIPE_BIND_DEPTH_STENCIL;
    else if (is_renderbuffer || internalFormat == 3 || internalFormat == 4 ||
             internalFormat == GL_RGB || internalFormat == GL_RGBA ||
+            internalFormat == GL_RGBA2 ||
+            internalFormat == GL_RGB4 || internalFormat == GL_RGBA4 ||
             internalFormat == GL_RGB8 || internalFormat == GL_RGBA8 ||
             internalFormat == GL_BGRA ||
             internalFormat == GL_RGB16F ||
@@ -2387,12 +2403,12 @@ st_ChooseTextureFormat(struct gl_context *ctx, GLenum target,
    }
 
    pFormat = st_choose_format(st, internalFormat, format, type,
-                              pTarget, 0, bindings, GL_TRUE);
+                              pTarget, 0, 0, bindings, GL_TRUE);
 
    if (pFormat == PIPE_FORMAT_NONE && !is_renderbuffer) {
       /* try choosing format again, this time without render target bindings */
       pFormat = st_choose_format(st, internalFormat, format, type,
-                                 pTarget, 0, PIPE_BIND_SAMPLER_VIEW,
+                                 pTarget, 0, 0, PIPE_BIND_SAMPLER_VIEW,
                                  GL_TRUE);
    }
 
@@ -2443,14 +2459,14 @@ st_QuerySamplesForFormat(struct gl_context *ctx, GLenum target,
    /* If an sRGB framebuffer is unsupported, sRGB formats behave like linear
     * formats.
     */
-   if (!ctx->Extensions.EXT_framebuffer_sRGB) {
+   if (!ctx->Extensions.EXT_sRGB) {
       internalFormat = _mesa_get_linear_internalformat(internalFormat);
    }
 
    /* Set sample counts in descending order. */
    for (i = 16; i > 1; i--) {
       format = st_choose_format(st, internalFormat, GL_NONE, GL_NONE,
-                                PIPE_TEXTURE_2D, i, bind, FALSE);
+                                PIPE_TEXTURE_2D, i, i, bind, FALSE);
 
       if (format != PIPE_FORMAT_NONE) {
          samples[num_sample_counts++] = i;
@@ -2509,7 +2525,7 @@ st_QueryInternalFormat(struct gl_context *ctx, GLenum target,
                                                   internalFormat,
                                                   GL_NONE,
                                                   GL_NONE,
-                                                  PIPE_TEXTURE_2D, 1,
+                                                  PIPE_TEXTURE_2D, 0, 0,
                                                   bindings, FALSE);
       if (pformat)
          params[0] = internalFormat;

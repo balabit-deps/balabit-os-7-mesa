@@ -23,7 +23,7 @@ radv_entrypoints = custom_target(
   input : ['radv_entrypoints_gen.py', vk_api_xml],
   output : ['radv_entrypoints.h', 'radv_entrypoints.c'],
   command : [
-    prog_python2, '@INPUT0@', '--xml', '@INPUT1@', '--outdir',
+    prog_python, '@INPUT0@', '--xml', '@INPUT1@', '--outdir',
     meson.current_build_dir()
   ],
   depend_files : files('radv_extensions.py'),
@@ -34,7 +34,7 @@ radv_extensions_c = custom_target(
   input : ['radv_extensions.py', vk_api_xml],
   output : ['radv_extensions.c', 'radv_extensions.h'],
   command : [
-    prog_python2, '@INPUT0@', '--xml', '@INPUT1@', '--out-c', '@OUTPUT0@',
+    prog_python, '@INPUT0@', '--xml', '@INPUT1@', '--out-c', '@OUTPUT0@',
     '--out-h', '@OUTPUT1@'
   ],
 )
@@ -43,7 +43,7 @@ vk_format_table_c = custom_target(
   'vk_format_table.c',
   input : ['vk_format_table.py', 'vk_format_layout.csv'],
   output : 'vk_format_table.c',
-  command : [prog_python2, '@INPUT@'],
+  command : [prog_python, '@INPUT@'],
   depend_files : files('vk_format_parse.py'),
   capture : true,
 )
@@ -78,6 +78,7 @@ libradv_files = files(
   'radv_meta_copy.c',
   'radv_meta_decompress.c',
   'radv_meta_fast_clear.c',
+  'radv_meta_fmask_expand.c',
   'radv_meta_resolve.c',
   'radv_meta_resolve_cs.c',
   'radv_meta_resolve_fs.c',
@@ -129,7 +130,7 @@ endif
 
 libvulkan_radeon = shared_library(
   'vulkan_radeon',
-  [libradv_files, radv_entrypoints, radv_extensions_c, vk_format_table_c],
+  [libradv_files, radv_entrypoints, radv_extensions_c, vk_format_table_c, sha1_h],
   include_directories : [
     inc_common, inc_amd, inc_amd_common, inc_compiler, inc_vulkan_util,
     inc_vulkan_wsi,
@@ -154,7 +155,7 @@ radeon_icd = custom_target(
   input : 'radv_icd.py',
   output : 'radeon_icd.@0@.json'.format(host_machine.cpu()),
   command : [
-    prog_python2, '@INPUT@',
+    prog_python, '@INPUT@',
     '--lib-path', join_paths(get_option('prefix'), get_option('libdir')),
     '--out', '@OUTPUT@',
   ],
@@ -169,7 +170,7 @@ radv_dev_icd = custom_target(
   input : 'radv_icd.py',
   output : 'dev_icd.json',
   command : [
-    prog_python2, '@INPUT@', '--lib-path', meson.current_build_dir(),
+    prog_python, '@INPUT@', '--lib-path', meson.current_build_dir(),
     '--out', '@OUTPUT@'
   ],
   depend_files : files('radv_extensions.py'),

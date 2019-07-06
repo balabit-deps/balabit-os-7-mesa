@@ -39,9 +39,6 @@
 #include <llvm/Transforms/IPO.h>
 
 #include <llvm/IR/LegacyPassManager.h>
-#if HAVE_LLVM < 0x0700
-#include "llvm/Support/raw_ostream.h"
-#endif
 
 void ac_add_attr_dereferenceable(LLVMValueRef val, uint64_t bytes)
 {
@@ -92,11 +89,7 @@ LLVMBuilderRef ac_create_builder(LLVMContextRef ctx,
 		llvm::unwrap(builder)->setFastMathFlags(flags);
 		break;
 	case AC_FLOAT_MODE_UNSAFE_FP_MATH:
-#if HAVE_LLVM >= 0x0600
 		flags.setFast();
-#else
-		flags.setUnsafeAlgebra();
-#endif
 		llvm::unwrap(builder)->setFastMathFlags(flags);
 		break;
 	}
@@ -136,9 +129,7 @@ struct ac_compiler_passes *ac_create_llvm_passes(LLVMTargetMachineRef tm)
 	llvm::TargetMachine *TM = reinterpret_cast<llvm::TargetMachine*>(tm);
 
 	if (TM->addPassesToEmitFile(p->passmgr, p->ostream,
-#if HAVE_LLVM >= 0x0700
 				    nullptr,
-#endif
 				    llvm::TargetMachine::CGFT_ObjectFile)) {
 		fprintf(stderr, "amd: TargetMachine can't emit a file of this type!\n");
 		delete p;
@@ -174,7 +165,5 @@ void ac_llvm_add_barrier_noop_pass(LLVMPassManagerRef passmgr)
 
 void ac_enable_global_isel(LLVMTargetMachineRef tm)
 {
-#if HAVE_LLVM >= 0x0700
   reinterpret_cast<llvm::TargetMachine*>(tm)->setGlobalISel(true);
-#endif
 }

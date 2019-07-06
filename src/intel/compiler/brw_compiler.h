@@ -195,6 +195,7 @@ struct brw_sampler_prog_key_data {
    uint32_t y_uv_image_mask;
    uint32_t yx_xuxv_image_mask;
    uint32_t xy_uxvx_image_mask;
+   uint32_t ayuv_image_mask;
 };
 
 /**
@@ -434,18 +435,14 @@ union brw_any_prog_key {
  * entries [most of them except when we're doing untyped surface
  * access] will be removed by the uniform packing pass.
  */
-#define BRW_IMAGE_PARAM_SURFACE_IDX_OFFSET      0
-#define BRW_IMAGE_PARAM_OFFSET_OFFSET           4
-#define BRW_IMAGE_PARAM_SIZE_OFFSET             8
-#define BRW_IMAGE_PARAM_STRIDE_OFFSET           12
-#define BRW_IMAGE_PARAM_TILING_OFFSET           16
-#define BRW_IMAGE_PARAM_SWIZZLING_OFFSET        20
-#define BRW_IMAGE_PARAM_SIZE                    24
+#define BRW_IMAGE_PARAM_OFFSET_OFFSET           0
+#define BRW_IMAGE_PARAM_SIZE_OFFSET             4
+#define BRW_IMAGE_PARAM_STRIDE_OFFSET           8
+#define BRW_IMAGE_PARAM_TILING_OFFSET           12
+#define BRW_IMAGE_PARAM_SWIZZLING_OFFSET        16
+#define BRW_IMAGE_PARAM_SIZE                    20
 
 struct brw_image_param {
-   /** Surface binding table index. */
-   uint32_t surface_idx;
-
    /** Offset applied to the X and Y surface coordinates. */
    uint32_t offset[2];
 
@@ -644,19 +641,6 @@ brw_stage_prog_data_add_params(struct brw_stage_prog_data *prog_data,
                                prog_data->param, uint32_t,
                                prog_data->nr_params);
    return prog_data->param + old_nr_params;
-}
-
-static inline void
-brw_mark_surface_used(struct brw_stage_prog_data *prog_data,
-                      unsigned surf_index)
-{
-   /* A binding table index is 8 bits and the top 3 values are reserved for
-    * special things (stateless and SLM).
-    */
-   assert(surf_index <= 252);
-
-   prog_data->binding_table.size_bytes =
-      MAX2(prog_data->binding_table.size_bytes, (surf_index + 1) * 4);
 }
 
 enum brw_barycentric_mode {
@@ -1242,7 +1226,7 @@ brw_compile_vs(const struct brw_compiler *compiler, void *log_data,
                void *mem_ctx,
                const struct brw_vs_prog_key *key,
                struct brw_vs_prog_data *prog_data,
-               const struct nir_shader *shader,
+               struct nir_shader *shader,
                int shader_time_index,
                char **error_str);
 
@@ -1257,7 +1241,7 @@ brw_compile_tcs(const struct brw_compiler *compiler,
                 void *mem_ctx,
                 const struct brw_tcs_prog_key *key,
                 struct brw_tcs_prog_data *prog_data,
-                const struct nir_shader *nir,
+                struct nir_shader *nir,
                 int shader_time_index,
                 char **error_str);
 
@@ -1272,7 +1256,7 @@ brw_compile_tes(const struct brw_compiler *compiler, void *log_data,
                 const struct brw_tes_prog_key *key,
                 const struct brw_vue_map *input_vue_map,
                 struct brw_tes_prog_data *prog_data,
-                const struct nir_shader *shader,
+                struct nir_shader *shader,
                 struct gl_program *prog,
                 int shader_time_index,
                 char **error_str);
@@ -1287,7 +1271,7 @@ brw_compile_gs(const struct brw_compiler *compiler, void *log_data,
                void *mem_ctx,
                const struct brw_gs_prog_key *key,
                struct brw_gs_prog_data *prog_data,
-               const struct nir_shader *shader,
+               struct nir_shader *shader,
                struct gl_program *prog,
                int shader_time_index,
                char **error_str);
@@ -1334,7 +1318,7 @@ brw_compile_fs(const struct brw_compiler *compiler, void *log_data,
                void *mem_ctx,
                const struct brw_wm_prog_key *key,
                struct brw_wm_prog_data *prog_data,
-               const struct nir_shader *shader,
+               struct nir_shader *shader,
                struct gl_program *prog,
                int shader_time_index8,
                int shader_time_index16,

@@ -732,10 +732,10 @@ execbuffer(int fd,
 
       /* Update brw_bo::gtt_offset */
       if (batch->validation_list[i].offset != bo->gtt_offset) {
-         assert(!(bo->kflags & EXEC_OBJECT_PINNED));
          DBG("BO %d migrated: 0x%" PRIx64 " -> 0x%llx\n",
              bo->gem_handle, bo->gtt_offset,
              batch->validation_list[i].offset);
+         assert(!(bo->kflags & EXEC_OBJECT_PINNED));
          bo->gtt_offset = batch->validation_list[i].offset;
       }
    }
@@ -881,7 +881,7 @@ _intel_batchbuffer_flush_fence(struct brw_context *brw,
               bytes_for_commands, 100.0f * bytes_for_commands / BATCH_SZ,
               bytes_for_state, 100.0f * bytes_for_state / STATE_SZ,
               brw->batch.exec_count,
-              (float) brw->batch.aperture_space / (1024 * 1024),
+              (float) (brw->batch.aperture_space / (1024 * 1024)),
               brw->batch.batch_relocs.reloc_count,
               brw->batch.state_relocs.reloc_count);
 
@@ -899,13 +899,6 @@ _intel_batchbuffer_flush_fence(struct brw_context *brw,
    brw_new_batch(brw);
 
    return ret;
-}
-
-bool
-brw_batch_has_aperture_space(struct brw_context *brw, unsigned extra_space)
-{
-   return brw->batch.aperture_space + extra_space <=
-          brw->screen->aperture_threshold;
 }
 
 bool
@@ -1225,7 +1218,7 @@ brw_load_register_imm64(struct brw_context *brw, uint32_t reg, uint64_t imm)
  * Copies a 32-bit register.
  */
 void
-brw_load_register_reg(struct brw_context *brw, uint32_t src, uint32_t dest)
+brw_load_register_reg(struct brw_context *brw, uint32_t dest, uint32_t src)
 {
    assert(brw->screen->devinfo.gen >= 8 || brw->screen->devinfo.is_haswell);
 
@@ -1240,7 +1233,7 @@ brw_load_register_reg(struct brw_context *brw, uint32_t src, uint32_t dest)
  * Copies a 64-bit register.
  */
 void
-brw_load_register_reg64(struct brw_context *brw, uint32_t src, uint32_t dest)
+brw_load_register_reg64(struct brw_context *brw, uint32_t dest, uint32_t src)
 {
    assert(brw->screen->devinfo.gen >= 8 || brw->screen->devinfo.is_haswell);
 

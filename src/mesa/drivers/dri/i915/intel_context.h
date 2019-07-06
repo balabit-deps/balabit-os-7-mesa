@@ -159,7 +159,6 @@ struct intel_context
     */
    int gen;
    bool is_945;
-   bool has_swizzling;
 
    struct intel_batchbuffer batch;
 
@@ -237,8 +236,6 @@ struct intel_context
     * the contents of the fake front buffer to the real front buffer.
     */
    bool front_buffer_dirty;
-
-   bool use_early_z;
 
    __DRIcontext *driContext;
    struct intel_screen *intelScreen;
