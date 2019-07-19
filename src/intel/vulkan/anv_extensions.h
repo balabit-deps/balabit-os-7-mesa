@@ -59,7 +59,7 @@ struct anv_instance_extension_table {
 extern const struct anv_instance_extension_table anv_instance_extensions_supported;
 
 
-#define ANV_DEVICE_EXTENSION_COUNT 48
+#define ANV_DEVICE_EXTENSION_COUNT 49
 
 extern const VkExtensionProperties anv_device_extensions[];
 
@@ -107,6 +107,7 @@ struct anv_device_extension_table {
         bool EXT_global_priority;
         bool EXT_pci_bus_info;
         bool EXT_post_depth_coverage;
+        bool EXT_queue_family_foreign;
         bool EXT_sampler_filter_minmax;
         bool EXT_scalar_block_layout;
         bool EXT_shader_viewport_index_layer;

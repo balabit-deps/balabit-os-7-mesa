@@ -10,5 +10,5 @@ dont-enable-10bpc-by-default.diff
 disable-intel-ccs-compression.diff
 revert-set-full-thread-affinity.diff
 i965-comet-lake.diff
-radeon-rework-gfx9-scissor-workaround.diff
+icl-backport.diff
 i965-revert-enabling-softpin.diff

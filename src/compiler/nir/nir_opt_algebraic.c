@@ -38888,297 +38888,187 @@ static const nir_search_expression replace542 = {
 };
    
 static const nir_search_variable search543_0_0 = {
-   { nir_search_value_variable, 1 },
-   0, /* a */
+   { nir_search_value_variable, -3 },
+   0, /* c */
+   true,
+   nir_type_invalid,
+   NULL,
+};
+
+static const nir_search_variable search543_0_1 = {
+   { nir_search_value_variable, -3 },
+   1, /* a */
    false,
    nir_type_invalid,
    NULL,
 };
 static const nir_search_expression search543_0 = {
-   { nir_search_value_expression, 1 },
+   { nir_search_value_expression, -3 },
    false,
-   nir_op_inot,
-   { &search543_0_0.value },
+   nir_op_fadd,
+   { &search543_0_0.value, &search543_0_1.value },
+   (is_used_once),
+};
+
+static const nir_search_variable search543_1_0 = {
+   { nir_search_value_variable, -3 },
+   0, /* c */
+   true,
+   nir_type_invalid,
    NULL,
 };
-static const nir_search_expression search543 = {
-   { nir_search_value_expression, 0 },
+
+static const nir_search_variable search543_1_1 = {
+   { nir_search_value_variable, -3 },
+   2, /* b */
    false,
-   nir_search_op_b2f,
-   { &search543_0.value },
-   (is_used_more_than_once),
+   nir_type_invalid,
+   NULL,
+};
+static const nir_search_expression search543_1 = {
+   { nir_search_value_expression, -3 },
+   false,
+   nir_op_fadd,
+   { &search543_1_0.value, &search543_1_1.value },
+   (is_used_once),
+};
+static const nir_search_expression search543 = {
+   { nir_search_value_expression, -3 },
+   false,
+   nir_op_fmin,
+   { &search543_0.value, &search543_1.value },
+   NULL,
 };
    
 static const nir_search_variable replace543_0 = {
-   { nir_search_value_variable, 1 },
-   0, /* a */
+   { nir_search_value_variable, -3 },
+   0, /* c */
    false,
    nir_type_invalid,
    NULL,
 };
 
-static const nir_search_constant replace543_1 = {
-   { nir_search_value_constant, 0 },
-   nir_type_float, { 0x0 /* 0.0 */ },
+static const nir_search_variable replace543_1_0 = {
+   { nir_search_value_variable, -3 },
+   1, /* a */
+   false,
+   nir_type_invalid,
+   NULL,
 };
 
-static const nir_search_constant replace543_2 = {
-   { nir_search_value_constant, 0 },
-   nir_type_float, { 0x3ff0000000000000 /* 1.0 */ },
+static const nir_search_variable replace543_1_1 = {
+   { nir_search_value_variable, -3 },
+   2, /* b */
+   false,
+   nir_type_invalid,
+   NULL,
+};
+static const nir_search_expression replace543_1 = {
+   { nir_search_value_expression, -3 },
+   false,
+   nir_op_fmin,
+   { &replace543_1_0.value, &replace543_1_1.value },
+   NULL,
 };
 static const nir_search_expression replace543 = {
-   { nir_search_value_expression, 0 },
+   { nir_search_value_expression, -3 },
    false,
-   nir_op_bcsel,
-   { &replace543_0.value, &replace543_1.value, &replace543_2.value },
+   nir_op_fadd,
+   { &replace543_0.value, &replace543_1.value },
    NULL,
 };
    
-static const nir_search_variable search544_0_0_0 = {
-   { nir_search_value_variable, 1 },
-   0, /* a */
-   false,
+static const nir_search_variable search544_0_0 = {
+   { nir_search_value_variable, -3 },
+   0, /* c */
+   true,
    nir_type_invalid,
    NULL,
 };
-static const nir_search_expression search544_0_0 = {
-   { nir_search_value_expression, 1 },
+
+static const nir_search_variable search544_0_1 = {
+   { nir_search_value_variable, -3 },
+   1, /* a */
    false,
-   nir_op_inot,
-   { &search544_0_0_0.value },
+   nir_type_invalid,
    NULL,
 };
 static const nir_search_expression search544_0 = {
-   { nir_search_value_expression, 0 },
+   { nir_search_value_expression, -3 },
    false,
-   nir_search_op_b2f,
-   { &search544_0_0.value },
+   nir_op_fadd,
+   { &search544_0_0.value, &search544_0_1.value },
+   (is_used_once),
+};
+
+static const nir_search_variable search544_1_0 = {
+   { nir_search_value_variable, -3 },
+   0, /* c */
+   true,
+   nir_type_invalid,
    NULL,
 };
-static const nir_search_expression search544 = {
-   { nir_search_value_expression, 0 },
+
+static const nir_search_variable search544_1_1 = {
+   { nir_search_value_variable, -3 },
+   2, /* b */
    false,
-   nir_op_fneg,
-   { &search544_0.value },
-   (is_used_more_than_once),
+   nir_type_invalid,
+   NULL,
+};
+static const nir_search_expression search544_1 = {
+   { nir_search_value_expression, -3 },
+   false,
+   nir_op_fadd,
+   { &search544_1_0.value, &search544_1_1.value },
+   (is_used_once),
+};
+static const nir_search_expression search544 = {
+   { nir_search_value_expression, -3 },
+   false,
+   nir_op_fmax,
+   { &search544_0.value, &search544_1.value },
+   NULL,
 };
    
 static const nir_search_variable replace544_0 = {
-   { nir_search_value_variable, 1 },
-   0, /* a */
+   { nir_search_value_variable, -3 },
+   0, /* c */
    false,
    nir_type_invalid,
    NULL,
 };
 
-static const nir_search_constant replace544_1 = {
-   { nir_search_value_constant, 0 },
-   nir_type_float, { 0x8000000000000000L /* -0.0 */ },
+static const nir_search_variable replace544_1_0 = {
+   { nir_search_value_variable, -3 },
+   1, /* a */
+   false,
+   nir_type_invalid,
+   NULL,
 };
 
-static const nir_search_constant replace544_2 = {
-   { nir_search_value_constant, 0 },
-   nir_type_float, { 0xbff0000000000000L /* -1.0 */ },
+static const nir_search_variable replace544_1_1 = {
+   { nir_search_value_variable, -3 },
+   2, /* b */
+   false,
+   nir_type_invalid,
+   NULL,
+};
+static const nir_search_expression replace544_1 = {
+   { nir_search_value_expression, -3 },
+   false,
+   nir_op_fmax,
+   { &replace544_1_0.value, &replace544_1_1.value },
+   NULL,
 };
 static const nir_search_expression replace544 = {
-   { nir_search_value_expression, 0 },
-   false,
-   nir_op_bcsel,
-   { &replace544_0.value, &replace544_1.value, &replace544_2.value },
-   NULL,
-};
-   
-static const nir_search_variable search545_0_0 = {
-   { nir_search_value_variable, -3 },
-   0, /* c */
-   true,
-   nir_type_invalid,
-   NULL,
-};
-
-static const nir_search_variable search545_0_1 = {
-   { nir_search_value_variable, -3 },
-   1, /* a */
-   false,
-   nir_type_invalid,
-   NULL,
-};
-static const nir_search_expression search545_0 = {
    { nir_search_value_expression, -3 },
    false,
    nir_op_fadd,
-   { &search545_0_0.value, &search545_0_1.value },
-   (is_used_once),
-};
-
-static const nir_search_variable search545_1_0 = {
-   { nir_search_value_variable, -3 },
-   0, /* c */
-   true,
-   nir_type_invalid,
+   { &replace544_0.value, &replace544_1.value },
    NULL,
 };
 
-static const nir_search_variable search545_1_1 = {
-   { nir_search_value_variable, -3 },
-   2, /* b */
-   false,
-   nir_type_invalid,
-   NULL,
-};
-static const nir_search_expression search545_1 = {
-   { nir_search_value_expression, -3 },
-   false,
-   nir_op_fadd,
-   { &search545_1_0.value, &search545_1_1.value },
-   (is_used_once),
-};
-static const nir_search_expression search545 = {
-   { nir_search_value_expression, -3 },
-   false,
-   nir_op_fmin,
-   { &search545_0.value, &search545_1.value },
-   NULL,
-};
-   
-static const nir_search_variable replace545_0 = {
-   { nir_search_value_variable, -3 },
-   0, /* c */
-   false,
-   nir_type_invalid,
-   NULL,
-};
-
-static const nir_search_variable replace545_1_0 = {
-   { nir_search_value_variable, -3 },
-   1, /* a */
-   false,
-   nir_type_invalid,
-   NULL,
-};
-
-static const nir_search_variable replace545_1_1 = {
-   { nir_search_value_variable, -3 },
-   2, /* b */
-   false,
-   nir_type_invalid,
-   NULL,
-};
-static const nir_search_expression replace545_1 = {
-   { nir_search_value_expression, -3 },
-   false,
-   nir_op_fmin,
-   { &replace545_1_0.value, &replace545_1_1.value },
-   NULL,
-};
-static const nir_search_expression replace545 = {
-   { nir_search_value_expression, -3 },
-   false,
-   nir_op_fadd,
-   { &replace545_0.value, &replace545_1.value },
-   NULL,
-};
-   
-static const nir_search_variable search546_0_0 = {
-   { nir_search_value_variable, -3 },
-   0, /* c */
-   true,
-   nir_type_invalid,
-   NULL,
-};
-
-static const nir_search_variable search546_0_1 = {
-   { nir_search_value_variable, -3 },
-   1, /* a */
-   false,
-   nir_type_invalid,
-   NULL,
-};
-static const nir_search_expression search546_0 = {
-   { nir_search_value_expression, -3 },
-   false,
-   nir_op_fadd,
-   { &search546_0_0.value, &search546_0_1.value },
-   (is_used_once),
-};
-
-static const nir_search_variable search546_1_0 = {
-   { nir_search_value_variable, -3 },
-   0, /* c */
-   true,
-   nir_type_invalid,
-   NULL,
-};
-
-static const nir_search_variable search546_1_1 = {
-   { nir_search_value_variable, -3 },
-   2, /* b */
-   false,
-   nir_type_invalid,
-   NULL,
-};
-static const nir_search_expression search546_1 = {
-   { nir_search_value_expression, -3 },
-   false,
-   nir_op_fadd,
-   { &search546_1_0.value, &search546_1_1.value },
-   (is_used_once),
-};
-static const nir_search_expression search546 = {
-   { nir_search_value_expression, -3 },
-   false,
-   nir_op_fmax,
-   { &search546_0.value, &search546_1.value },
-   NULL,
-};
-   
-static const nir_search_variable replace546_0 = {
-   { nir_search_value_variable, -3 },
-   0, /* c */
-   false,
-   nir_type_invalid,
-   NULL,
-};
-
-static const nir_search_variable replace546_1_0 = {
-   { nir_search_value_variable, -3 },
-   1, /* a */
-   false,
-   nir_type_invalid,
-   NULL,
-};
-
-static const nir_search_variable replace546_1_1 = {
-   { nir_search_value_variable, -3 },
-   2, /* b */
-   false,
-   nir_type_invalid,
-   NULL,
-};
-static const nir_search_expression replace546_1 = {
-   { nir_search_value_expression, -3 },
-   false,
-   nir_op_fmax,
-   { &replace546_1_0.value, &replace546_1_1.value },
-   NULL,
-};
-static const nir_search_expression replace546 = {
-   { nir_search_value_expression, -3 },
-   false,
-   nir_op_fadd,
-   { &replace546_0.value, &replace546_1.value },
-   NULL,
-};
-
-static const struct transform nir_opt_algebraic_late_b2f16_xforms[] = {
-   { &search543, &replace543.value, 0 },
-};
-static const struct transform nir_opt_algebraic_late_b2f32_xforms[] = {
-   { &search543, &replace543.value, 0 },
-};
-static const struct transform nir_opt_algebraic_late_b2f64_xforms[] = {
-   { &search543, &replace543.value, 0 },
-};
 static const struct transform nir_opt_algebraic_late_fdot2_xforms[] = {
    { &search539, &replace539.value, 45 },
 };
@@ -39204,16 +39094,13 @@ static const struct transform nir_opt_algebraic_late_flt_xforms[] = {
    { &search533, &replace533.value, 0 },
 };
 static const struct transform nir_opt_algebraic_late_fmax_xforms[] = {
-   { &search546, &replace546.value, 0 },
+   { &search544, &replace544.value, 0 },
 };
 static const struct transform nir_opt_algebraic_late_fmin_xforms[] = {
-   { &search545, &replace545.value, 0 },
+   { &search543, &replace543.value, 0 },
 };
 static const struct transform nir_opt_algebraic_late_fne_xforms[] = {
    { &search537, &replace537.value, 0 },
-};
-static const struct transform nir_opt_algebraic_late_fneg_xforms[] = {
-   { &search544, &replace544.value, 0 },
 };
 
 static bool
@@ -39231,36 +39118,6 @@ nir_opt_algebraic_late_block(nir_builder *build, nir_block *block,
          continue;
 
       switch (alu->op) {
-      case nir_op_b2f16:
-         for (unsigned i = 0; i < ARRAY_SIZE(nir_opt_algebraic_late_b2f16_xforms); i++) {
-            const struct transform *xform = &nir_opt_algebraic_late_b2f16_xforms[i];
-            if (condition_flags[xform->condition_offset] &&
-                nir_replace_instr(build, alu, xform->search, xform->replace)) {
-               progress = true;
-               break;
-            }
-         }
-         break;
-      case nir_op_b2f32:
-         for (unsigned i = 0; i < ARRAY_SIZE(nir_opt_algebraic_late_b2f32_xforms); i++) {
-            const struct transform *xform = &nir_opt_algebraic_late_b2f32_xforms[i];
-            if (condition_flags[xform->condition_offset] &&
-                nir_replace_instr(build, alu, xform->search, xform->replace)) {
-               progress = true;
-               break;
-            }
-         }
-         break;
-      case nir_op_b2f64:
-         for (unsigned i = 0; i < ARRAY_SIZE(nir_opt_algebraic_late_b2f64_xforms); i++) {
-            const struct transform *xform = &nir_opt_algebraic_late_b2f64_xforms[i];
-            if (condition_flags[xform->condition_offset] &&
-                nir_replace_instr(build, alu, xform->search, xform->replace)) {
-               progress = true;
-               break;
-            }
-         }
-         break;
       case nir_op_fdot2:
          for (unsigned i = 0; i < ARRAY_SIZE(nir_opt_algebraic_late_fdot2_xforms); i++) {
             const struct transform *xform = &nir_opt_algebraic_late_fdot2_xforms[i];
@@ -39354,16 +39211,6 @@ nir_opt_algebraic_late_block(nir_builder *build, nir_block *block,
       case nir_op_fne:
          for (unsigned i = 0; i < ARRAY_SIZE(nir_opt_algebraic_late_fne_xforms); i++) {
             const struct transform *xform = &nir_opt_algebraic_late_fne_xforms[i];
-            if (condition_flags[xform->condition_offset] &&
-                nir_replace_instr(build, alu, xform->search, xform->replace)) {
-               progress = true;
-               break;
-            }
-         }
-         break;
-      case nir_op_fneg:
-         for (unsigned i = 0; i < ARRAY_SIZE(nir_opt_algebraic_late_fneg_xforms); i++) {
-            const struct transform *xform = &nir_opt_algebraic_late_fneg_xforms[i];
             if (condition_flags[xform->condition_offset] &&
                 nir_replace_instr(build, alu, xform->search, xform->replace)) {
                progress = true;

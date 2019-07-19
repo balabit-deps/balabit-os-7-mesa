@@ -210,7 +210,7 @@ void radv_fill_device_extension_table(const struct radv_physical_device *device,
    table->EXT_conservative_rasterization = device->rad_info.chip_class >= GFX9 && (instance->enabled_extensions.KHR_get_physical_device_properties2 || instance->apiVersion >= VK_API_VERSION_1_1);
    table->EXT_display_control = VK_USE_PLATFORM_DISPLAY_KHR && instance->enabled_extensions.KHR_surface && instance->enabled_extensions.EXT_display_surface_counter;
    table->EXT_depth_range_unrestricted = true;
-   table->EXT_descriptor_indexing = true && (instance->enabled_extensions.KHR_get_physical_device_properties2 || instance->apiVersion >= VK_API_VERSION_1_1);
+   table->EXT_descriptor_indexing = false && (instance->enabled_extensions.KHR_get_physical_device_properties2 || instance->apiVersion >= VK_API_VERSION_1_1);
    table->EXT_discard_rectangles = true && (instance->enabled_extensions.KHR_get_physical_device_properties2 || instance->apiVersion >= VK_API_VERSION_1_1);
    table->EXT_external_memory_dma_buf = true && (instance->enabled_extensions.KHR_external_memory_capabilities || instance->apiVersion >= VK_API_VERSION_1_1);
    table->EXT_external_memory_host = device->rad_info.has_userptr && (instance->enabled_extensions.KHR_external_memory_capabilities || instance->apiVersion >= VK_API_VERSION_1_1);

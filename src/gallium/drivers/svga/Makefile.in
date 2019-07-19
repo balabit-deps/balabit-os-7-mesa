@@ -151,7 +151,7 @@ libsvga_la_LIBADD =
 am__dirstamp = $(am__leading_dot)dirstamp
 am__objects_1 = svga_cmd.lo svga_cmd_vgpu10.lo svga_context.lo \
 	svga_draw_arrays.lo svga_draw.lo svga_draw_elements.lo \
-	svga_format.lo svga_link.lo svga_msg.lo svga_pipe_blend.lo \
+	svga_format.lo svga_link.lo svga_pipe_blend.lo \
 	svga_pipe_blit.lo svga_pipe_clear.lo svga_pipe_constants.lo \
 	svga_pipe_depthstencil.lo svga_pipe_draw.lo svga_pipe_flush.lo \
 	svga_pipe_fs.lo svga_pipe_gs.lo svga_pipe_misc.lo \
@@ -195,9 +195,8 @@ am__depfiles_remade = ./$(DEPDIR)/svga_cmd.Plo \
 	./$(DEPDIR)/svga_cmd_vgpu10.Plo ./$(DEPDIR)/svga_context.Plo \
 	./$(DEPDIR)/svga_draw.Plo ./$(DEPDIR)/svga_draw_arrays.Plo \
 	./$(DEPDIR)/svga_draw_elements.Plo ./$(DEPDIR)/svga_format.Plo \
-	./$(DEPDIR)/svga_link.Plo ./$(DEPDIR)/svga_msg.Plo \
-	./$(DEPDIR)/svga_pipe_blend.Plo ./$(DEPDIR)/svga_pipe_blit.Plo \
-	./$(DEPDIR)/svga_pipe_clear.Plo \
+	./$(DEPDIR)/svga_link.Plo ./$(DEPDIR)/svga_pipe_blend.Plo \
+	./$(DEPDIR)/svga_pipe_blit.Plo ./$(DEPDIR)/svga_pipe_clear.Plo \
 	./$(DEPDIR)/svga_pipe_constants.Plo \
 	./$(DEPDIR)/svga_pipe_depthstencil.Plo \
 	./$(DEPDIR)/svga_pipe_draw.Plo ./$(DEPDIR)/svga_pipe_flush.Plo \
@@ -621,8 +620,6 @@ C_SOURCES := \
 	svga_hw_reg.h \
 	svga_link.c \
 	svga_link.h \
-	svga_msg.c \
-	svga_msg.h \
 	svga_mksstats.h \
 	svga_pipe_blend.c \
 	svga_pipe_blit.c \
@@ -869,7 +866,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/svga_draw_elements.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/svga_format.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/svga_link.Plo@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/svga_msg.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/svga_pipe_blend.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/svga_pipe_blit.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/svga_pipe_clear.Plo@am__quote@ # am--include-marker
@@ -1090,7 +1086,6 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/svga_draw_elements.Plo
 	-rm -f ./$(DEPDIR)/svga_format.Plo
 	-rm -f ./$(DEPDIR)/svga_link.Plo
-	-rm -f ./$(DEPDIR)/svga_msg.Plo
 	-rm -f ./$(DEPDIR)/svga_pipe_blend.Plo
 	-rm -f ./$(DEPDIR)/svga_pipe_blit.Plo
 	-rm -f ./$(DEPDIR)/svga_pipe_clear.Plo
@@ -1191,7 +1186,6 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/svga_draw_elements.Plo
 	-rm -f ./$(DEPDIR)/svga_format.Plo
 	-rm -f ./$(DEPDIR)/svga_link.Plo
-	-rm -f ./$(DEPDIR)/svga_msg.Plo
 	-rm -f ./$(DEPDIR)/svga_pipe_blend.Plo
 	-rm -f ./$(DEPDIR)/svga_pipe_blit.Plo
 	-rm -f ./$(DEPDIR)/svga_pipe_clear.Plo

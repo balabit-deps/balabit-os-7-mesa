@@ -1,3 +1,12 @@
+mesa (19.0.8-0ubuntu0~18.04.1) bionic; urgency=medium
+
+  * New upstream bugfix release. (LP: #1831700)
+  * icl-backport.diff: Backport support for fast color clears and
+    bugfixes for Ice Lake (LP: #1825940).
+  * radeon-rework-gfx9-scissor-workaround.diff: Dropped, upstream.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Fri, 19 Jul 2019 11:30:04 +0300
+
 mesa (19.0.2-1ubuntu1.1~18.04.2) bionic; urgency=medium
 
   * i965-revert-enabling-softpin.diff: Don't enable softpin, causes

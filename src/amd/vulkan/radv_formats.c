@@ -524,7 +524,7 @@ static bool radv_is_storage_image_format_supported(struct radv_physical_device *
 	}
 }
 
-static bool radv_is_buffer_format_supported(VkFormat format, bool *scaled)
+bool radv_is_buffer_format_supported(VkFormat format, bool *scaled)
 {
 	const struct vk_format_description *desc = vk_format_description(format);
 	unsigned data_format, num_format;
@@ -536,7 +536,8 @@ static bool radv_is_buffer_format_supported(VkFormat format, bool *scaled)
 	num_format = radv_translate_buffer_numformat(desc,
 						     vk_format_get_first_non_void_channel(format));
 
-	*scaled = (num_format == V_008F0C_BUF_NUM_FORMAT_SSCALED) || (num_format == V_008F0C_BUF_NUM_FORMAT_USCALED);
+	if (scaled)
+		*scaled = (num_format == V_008F0C_BUF_NUM_FORMAT_SSCALED) || (num_format == V_008F0C_BUF_NUM_FORMAT_USCALED);
 	return data_format != V_008F0C_BUF_DATA_FORMAT_INVALID &&
 		num_format != ~0;
 }
@@ -990,10 +991,22 @@ bool radv_format_pack_clear_color(VkFormat format,
 				assert(channel->size == 8);
 
 				v = util_format_linear_float_to_srgb_8unorm(value->float32[c]);
-			} else if (channel->type == VK_FORMAT_TYPE_UNSIGNED) {
-				v = MAX2(MIN2(value->float32[c], 1.0f), 0.0f) * ((1ULL << channel->size) - 1);
-			} else  {
-				v = MAX2(MIN2(value->float32[c], 1.0f), -1.0f) * ((1ULL << (channel->size - 1)) - 1);
+			} else {
+				float f = MIN2(value->float32[c], 1.0f);
+
+				if (channel->type == VK_FORMAT_TYPE_UNSIGNED) {
+					f = MAX2(f, 0.0f) * ((1ULL << channel->size) - 1);
+				} else {
+					f = MAX2(f, -1.0f) * ((1ULL << (channel->size - 1)) - 1);
+				}
+
+				/* The hardware rounds before conversion. */
+				if (f > 0)
+					f += 0.5f;
+				else
+					f -= 0.5f;
+
+				v = (uint64_t)f;
 			}
 		} else if (channel->type == VK_FORMAT_TYPE_FLOAT) {
 			if (channel->size == 32) {
