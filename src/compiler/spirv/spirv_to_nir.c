@@ -494,6 +494,7 @@ vtn_handle_decoration(struct vtn_builder *b, SpvOp opcode,
       break;
 
    case SpvOpDecorate:
+   case SpvOpDecorateId:
    case SpvOpMemberDecorate:
    case SpvOpDecorateStringGOOGLE:
    case SpvOpMemberDecorateStringGOOGLE:
@@ -503,6 +504,7 @@ vtn_handle_decoration(struct vtn_builder *b, SpvOp opcode,
       struct vtn_decoration *dec = rzalloc(b, struct vtn_decoration);
       switch (opcode) {
       case SpvOpDecorate:
+      case SpvOpDecorateId:
       case SpvOpDecorateStringGOOGLE:
          dec->scope = VTN_DEC_DECORATION;
          break;
@@ -3699,10 +3701,24 @@ vtn_handle_preamble_instruction(struct vtn_builder *b, SpvOp opcode,
          spv_check_supported(storage_8bit, cap);
          break;
 
+      case SpvCapabilityShaderNonUniformEXT:
+         spv_check_supported(descriptor_indexing, cap);
+         break;
+
       case SpvCapabilityInputAttachmentArrayDynamicIndexingEXT:
       case SpvCapabilityUniformTexelBufferArrayDynamicIndexingEXT:
       case SpvCapabilityStorageTexelBufferArrayDynamicIndexingEXT:
          spv_check_supported(descriptor_array_dynamic_indexing, cap);
+         break;
+
+      case SpvCapabilityUniformBufferArrayNonUniformIndexingEXT:
+      case SpvCapabilitySampledImageArrayNonUniformIndexingEXT:
+      case SpvCapabilityStorageBufferArrayNonUniformIndexingEXT:
+      case SpvCapabilityStorageImageArrayNonUniformIndexingEXT:
+      case SpvCapabilityInputAttachmentArrayNonUniformIndexingEXT:
+      case SpvCapabilityUniformTexelBufferArrayNonUniformIndexingEXT:
+      case SpvCapabilityStorageTexelBufferArrayNonUniformIndexingEXT:
+         spv_check_supported(descriptor_array_non_uniform_indexing, cap);
          break;
 
       case SpvCapabilityRuntimeDescriptorArrayEXT:
@@ -3760,6 +3776,7 @@ vtn_handle_preamble_instruction(struct vtn_builder *b, SpvOp opcode,
    case SpvOpExecutionMode:
    case SpvOpDecorationGroup:
    case SpvOpDecorate:
+   case SpvOpDecorateId:
    case SpvOpMemberDecorate:
    case SpvOpGroupDecorate:
    case SpvOpGroupMemberDecorate:
@@ -3947,6 +3964,7 @@ vtn_handle_variable_or_type_instruction(struct vtn_builder *b, SpvOp opcode,
    case SpvOpMemberName:
    case SpvOpDecorationGroup:
    case SpvOpDecorate:
+   case SpvOpDecorateId:
    case SpvOpMemberDecorate:
    case SpvOpGroupDecorate:
    case SpvOpGroupMemberDecorate:

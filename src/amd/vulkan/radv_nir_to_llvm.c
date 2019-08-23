@@ -2027,10 +2027,32 @@ handle_vs_input_decl(struct radv_shader_context *ctx,
 
 		t_list = ac_build_load_to_sgpr(&ctx->ac, t_list_ptr, t_offset);
 
-		input = ac_build_buffer_load_format(&ctx->ac, t_list,
-						    buffer_index,
-						    ctx->ac.i32_0,
-						    num_channels, false, true);
+		if (ctx->options->key.vs.vertex_attribute_provided & (1u << attrib_index)) {
+			input = ac_build_buffer_load_format(&ctx->ac, t_list,
+							    buffer_index,
+							    ctx->ac.i32_0,
+							    num_channels, false, true);
+		} else {
+			/* Per the Vulkan spec, it's invalid to consume vertex
+			 * attributes that are not provided by the pipeline but
+			 * some (invalid) apps appear to do that. Fill the
+			 * input array with (eg. (0, 0, 0, 1)) to workaround
+			 * the problem and to avoid possible GPU hangs.
+			 */
+			LLVMValueRef chan[4];
+
+			/* The input_usage mask might be 0 if input variables
+			 * are not removed by the compiler.
+			 */
+			num_channels = CLAMP(num_channels, 1, 4);
+
+			for (unsigned i = 0; i < num_channels; i++) {
+				chan[i] = i == 3 ? ctx->ac.f32_1 : ctx->ac.f32_0;
+				chan[i] = ac_to_float(&ctx->ac, chan[i]);
+			}
+
+			input = ac_build_gather_values(&ctx->ac, chan, num_channels);
+		}
 
 		input = ac_build_expand_to_vec4(&ctx->ac, input, num_channels);
 
@@ -3475,10 +3497,17 @@ LLVMModuleRef ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
 	ctx.abi.clamp_shadow_reference = false;
 	ctx.abi.gfx9_stride_size_workaround = ctx.ac.chip_class == GFX9 && HAVE_LLVM < 0x800;
 
+	/* Because the new raw/struct atomic intrinsics are buggy with LLVM 8,
+	 * we fallback to the old intrinsics for atomic buffer image operations
+	 * and thus we need to apply the indexing workaround...
+	 */
+	ctx.abi.gfx9_stride_size_workaround_for_atomic = ctx.ac.chip_class == GFX9 && HAVE_LLVM < 0x900;
+
 	if (shader_count >= 2)
 		ac_init_exec_full_mask(&ctx.ac);
 
-	if (ctx.ac.chip_class == GFX9 &&
+	if ((ctx.ac.family == CHIP_VEGA10 ||
+	     ctx.ac.family == CHIP_RAVEN) &&
 	    shaders[shader_count - 1]->info.stage == MESA_SHADER_TESS_CTRL)
 		ac_nir_fixup_ls_hs_input_vgprs(&ctx);
 

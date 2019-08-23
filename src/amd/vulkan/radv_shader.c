@@ -222,6 +222,8 @@ radv_shader_compile_to_nir(struct radv_device *device,
 			.lower_ubo_ssbo_access_to_offsets = true,
 			.caps = {
 				.descriptor_array_dynamic_indexing = true,
+				.descriptor_array_non_uniform_indexing = true,
+				.descriptor_indexing = true,
 				.device_group = true,
 				.draw_parameters = true,
 				.float64 = true,
@@ -610,6 +612,8 @@ shader_variant_create(struct radv_device *device,
 		tm_options |= AC_TM_SISCHED;
 	if (options->check_ir)
 		tm_options |= AC_TM_CHECK_IR;
+	if (device->instance->debug_flags & RADV_DEBUG_NO_LOAD_STORE_OPT)
+		tm_options |= AC_TM_NO_LOAD_STORE_OPT;
 
 	thread_compiler = !(device->instance->debug_flags & RADV_DEBUG_NOTHREADLLVM);
 	radv_init_llvm_once();
