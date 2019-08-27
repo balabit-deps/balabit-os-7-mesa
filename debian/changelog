@@ -1,3 +1,12 @@
+mesa (19.0.8-0ubuntu0~18.04.2) bionic; urgency=medium
+
+  * i965-revert-enabling-softpin.diff: Dropped, unnecessary by now and
+    broke Ice Lake which needs softpin. (LP: #1815172)
+  * rules: Force -DNDEBUG, meson < 0.47 is buggy and doesn't set it even
+    if we have b_ndebug=true. (LP: #1841412)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Tue, 27 Aug 2019 09:42:44 +0300
+
 mesa (19.0.8-0ubuntu0~18.04.1) bionic; urgency=medium
 
   * New upstream bugfix release. (LP: #1831700)

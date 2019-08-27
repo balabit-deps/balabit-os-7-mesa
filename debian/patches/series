@@ -11,4 +11,3 @@ disable-intel-ccs-compression.diff
 revert-set-full-thread-affinity.diff
 i965-comet-lake.diff
 icl-backport.diff
-i965-revert-enabling-softpin.diff
