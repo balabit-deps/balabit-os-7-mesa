@@ -1,3 +1,10 @@
+mesa (19.0.8-0ubuntu0~18.04.3) bionic; urgency=medium
+
+  * i965-sync-pciids.diff: Add missing pci-id's, fix descriptions. (LP:
+    #1845317)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Thu, 26 Sep 2019 07:58:03 +0300
+
 mesa (19.0.8-0ubuntu0~18.04.2) bionic; urgency=medium
 
   * i965-revert-enabling-softpin.diff: Dropped, unnecessary by now and
