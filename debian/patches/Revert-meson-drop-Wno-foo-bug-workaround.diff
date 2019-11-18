@@ -1,0 +1,73 @@
+From bd23f680f7b97ee2cb7a83620a4abccc9b4ab1e6 Mon Sep 17 00:00:00 2001
+From: Timo Aaltonen <tjaalton@debian.org>
+Date: Wed, 23 Oct 2019 12:53:48 +0300
+Subject: [PATCH] Revert "meson: drop -Wno-foo bug workaround for Meson < 0.46"
+
+This reverts commit 0c56cb50c70c6136669213899e05402f0723e279.
+---
+ meson.build | 27 ++++++++++++++++++---------
+ 1 file changed, 18 insertions(+), 9 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index db94f85f04e..4936f17e674 100644
+--- a/meson.build
++++ b/meson.build
+@@ -867,8 +867,6 @@ foreach a : ['-Werror=implicit-function-declaration',
+              '-Werror=incompatible-pointer-types',
+              '-Werror=format',
+              '-Wformat-security',
+-             '-Wno-missing-field-initializers',
+-             '-Wno-format-truncation',
+              '-fno-math-errno',
+              '-fno-trapping-math', '-Qunused-arguments']
+   if cc.has_argument(a)
+@@ -876,6 +874,12 @@ foreach a : ['-Werror=implicit-function-declaration',
+   endif
+ endforeach
+ 
++foreach a : ['missing-field-initializers', 'format-truncation']
++  if cc.has_argument('-W' + a)
++    c_args += '-Wno-' + a
++  endif
++endforeach
++
+ c_vis_args = []
+ if cc.has_argument('-fvisibility=hidden')
+   c_vis_args += '-fvisibility=hidden'
+@@ -886,9 +890,6 @@ cpp_args = []
+ foreach a : ['-Werror=return-type',
+              '-Werror=format',
+              '-Wformat-security',
+-             '-Wno-non-virtual-dtor',
+-             '-Wno-missing-field-initializers',
+-             '-Wno-format-truncation',
+              '-fno-math-errno', '-fno-trapping-math',
+              '-Qunused-arguments']
+   if cpp.has_argument(a)
+@@ -896,11 +897,19 @@ foreach a : ['-Werror=return-type',
+   endif
+ endforeach
+ 
++# For some reason, the test for -Wno-foo always succeeds with gcc, even if the
++# option is not supported. Hence, check for -Wfoo instead.
++
++foreach a : ['non-virtual-dtor', 'missing-field-initializers', 'format-truncation']
++  if cpp.has_argument('-W' + a)
++    cpp_args += '-Wno-' + a
++  endif
++endforeach
++
+ no_override_init_args = []
+-foreach a : ['-Wno-override-init',
+-             '-Wno-initializer-overrides']
+-  if cc.has_argument(a)
+-    no_override_init_args += a
++foreach a : ['override-init', 'initializer-overrides']
++  if cc.has_argument('-W' + a)
++    no_override_init_args += '-Wno-' + a
+   endif
+ endforeach
+ 
+-- 
+2.20.1
+

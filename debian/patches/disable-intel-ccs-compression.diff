@@ -14,11 +14,9 @@ Bug: https://bugs.freedesktop.org/show_bug.cgi?id=105518
 Forwarded: no
 Last-Update: 2018-03-21
 
-Index: mesa-18.0.0~rc4-1ubuntu4/src/mesa/drivers/dri/i965/intel_screen.c
-===================================================================
---- mesa-18.0.0~rc4-1ubuntu4.orig/src/mesa/drivers/dri/i965/intel_screen.c
-+++ mesa-18.0.0~rc4-1ubuntu4/src/mesa/drivers/dri/i965/intel_screen.c
-@@ -300,7 +300,11 @@ static const struct {
+--- a/src/mesa/drivers/dri/i965/intel_screen.c
++++ b/src/mesa/drivers/dri/i965/intel_screen.c
+@@ -333,7 +333,11 @@ static const struct {
     { .modifier = DRM_FORMAT_MOD_LINEAR       , .since_gen = 1 },
     { .modifier = I915_FORMAT_MOD_X_TILED     , .since_gen = 1 },
     { .modifier = I915_FORMAT_MOD_Y_TILED     , .since_gen = 6 },
@@ -31,4 +29,3 @@ Index: mesa-18.0.0~rc4-1ubuntu4/src/mesa/drivers/dri/i965/intel_screen.c
  };
  
  static bool
-

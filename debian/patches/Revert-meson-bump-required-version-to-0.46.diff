@@ -1,0 +1,26 @@
+From 93889e4f23c76da91a61f3d749546b38b3e067bc Mon Sep 17 00:00:00 2001
+From: Timo Aaltonen <tjaalton@debian.org>
+Date: Wed, 23 Oct 2019 12:58:23 +0300
+Subject: [PATCH] Revert "meson: bump required version to 0.46"
+
+This reverts commit f7b6a8d12fdc446e325129033e5f61e3bbafb0b2.
+---
+ meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/meson.build b/meson.build
+index db94f85f04e..027a8968a76 100644
+--- a/meson.build
++++ b/meson.build
+@@ -25,7 +25,7 @@ project(
+     [find_program('python', 'python2', 'python3'), 'bin/meson_get_version.py']
+   ).stdout(),
+   license : 'MIT',
+-  meson_version : '>= 0.46',
++  meson_version : '>= 0.45',
+   default_options : ['buildtype=debugoptimized', 'b_ndebug=if-release', 'c_std=c99', 'cpp_std=c++14']
+ )
+ 
+-- 
+2.20.1
+

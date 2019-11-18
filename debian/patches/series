@@ -1,14 +1,10 @@
 07_gallium-fix-build-failure-on-powerpcspe.diff
-
-# meson fixes
-fix-hurd-ftbfs.diff
-util-define-path-max.diff
-meson-fix-with-dri2-def-for-hurd.diff
+Revert-meson-fix-logic-for-generating-.pc-files-with.patch
 
 # Ubuntu patches.
 dont-enable-10bpc-by-default.diff
 disable-intel-ccs-compression.diff
 revert-set-full-thread-affinity.diff
-i965-comet-lake.diff
-icl-backport.diff
 i965-sync-pciids.diff
+Revert-meson-drop-Wno-foo-bug-workaround.diff
+Revert-meson-bump-required-version-to-0.46.diff

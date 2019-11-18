@@ -7,10 +7,11 @@ Uploaders: Andreas Boll <aboll@debian.org>
 Standards-Version: 4.1.4
 Build-Depends:
  debhelper (>= 11),
+# glslang-tools [amd64 arm64 armel armhf i386 mips mips64el mipsel powerpc ppc64 ppc64el s390x sparc64 x32],
  meson (>= 0.45),
  quilt (>= 0.63-8.2~),
  pkg-config,
- libdrm-dev (>= 2.4.97) [!hurd-any],
+ libdrm-dev (>= 2.4.99) [!hurd-any],
  libx11-dev,
  libxxf86vm-dev,
  libexpat1-dev,
@@ -35,14 +36,15 @@ Build-Depends:
  libxshmfence-dev (>= 1.1),
  python3,
  python3-mako,
+ python3-setuptools,
  flex,
  bison,
- llvm-8-dev (>= 1:8~) [amd64 arm64 armel armhf i386 kfreebsd-amd64 kfreebsd-i386 mips mips64el mipsel powerpc ppc64 ppc64el s390x sparc64],
+ llvm-9-dev (>= 1:9~+rc3-1~exp3) [amd64 arm64 armel armhf i386 kfreebsd-amd64 kfreebsd-i386 mips mips64el mipsel powerpc ppc64 ppc64el s390x sparc64],
  libelf-dev [amd64 arm64 armel armhf i386 kfreebsd-amd64 kfreebsd-i386 mips mips64el mipsel powerpc ppc64 ppc64el s390x sparc64],
  libwayland-dev (>= 1.15.0) [linux-any],
  libwayland-egl-backend-dev (>= 1.15.0) [linux-any],
- libclang-8-dev (>= 1:8~) [amd64 arm64 armel armhf i386 kfreebsd-amd64 kfreebsd-i386 mips mips64el mipsel powerpc ppc64 ppc64el s390x sparc64],
- libclc-dev (>= 0.2.0+git20190306-1~) [amd64 arm64 armel armhf i386 kfreebsd-amd64 kfreebsd-i386 mips mips64el mipsel powerpc ppc64 ppc64el s390x sparc64],
+ libclang-9-dev (>= 1:9~+rc3-1~exp3) [amd64 arm64 armel armhf i386 kfreebsd-amd64 kfreebsd-i386 mips mips64el mipsel powerpc ppc64 ppc64el s390x sparc64],
+ libclc-dev (>= 0.2.0+git20190827-1~) [amd64 arm64 armel armhf i386 kfreebsd-amd64 kfreebsd-i386 mips mips64el mipsel powerpc ppc64 ppc64el s390x sparc64],
  wayland-protocols (>= 1.9),
  zlib1g-dev,
  libglvnd-core-dev,
@@ -459,6 +461,7 @@ Depends:
  libvulkan1,
  ${shlibs:Depends},
  ${misc:Depends}
+Provides: vulkan-icd
 Multi-Arch: same
 Description: Mesa Vulkan graphics drivers
  Vulkan is a low-overhead 3D graphics and compute API. This package
