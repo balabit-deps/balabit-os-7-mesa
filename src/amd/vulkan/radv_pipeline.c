@@ -1122,15 +1122,32 @@ radv_pipeline_init_multisample_state(struct radv_pipeline *pipeline,
 	int ps_iter_samples = 1;
 	uint32_t mask = 0xffff;
 
-	if (vkms)
+	if (vkms) {
 		ms->num_samples = vkms->rasterizationSamples;
-	else
-		ms->num_samples = 1;
 
-	if (vkms)
-		ps_iter_samples = radv_pipeline_get_ps_iter_samples(vkms);
-	if (vkms && !vkms->sampleShadingEnable && pipeline->shaders[MESA_SHADER_FRAGMENT]->info.info.ps.force_persample) {
-		ps_iter_samples = ms->num_samples;
+		/* From the Vulkan 1.1.129 spec, 26.7. Sample Shading:
+		 *
+		 * "Sample shading is enabled for a graphics pipeline:
+		 *
+		 * - If the interface of the fragment shader entry point of the
+		 *   graphics pipeline includes an input variable decorated
+		 *   with SampleId or SamplePosition. In this case
+		 *   minSampleShadingFactor takes the value 1.0.
+		 * - Else if the sampleShadingEnable member of the
+		 *   VkPipelineMultisampleStateCreateInfo structure specified
+		 *   when creating the graphics pipeline is set to VK_TRUE. In
+		 *   this case minSampleShadingFactor takes the value of
+		 *   VkPipelineMultisampleStateCreateInfo::minSampleShading.
+		 *
+		 * Otherwise, sample shading is considered disabled."
+		 */
+		if (pipeline->shaders[MESA_SHADER_FRAGMENT]->info.info.ps.force_persample) {
+			ps_iter_samples = ms->num_samples;
+		} else {
+			ps_iter_samples = radv_pipeline_get_ps_iter_samples(vkms);
+		}
+	} else {
+		ms->num_samples = 1;
 	}
 
 	const struct VkPipelineRasterizationStateRasterizationOrderAMD *raster_order =
@@ -4738,6 +4755,19 @@ radv_compute_generate_pm4(struct radv_pipeline *pipeline)
 	assert(pipeline->cs.cdw <= pipeline->cs.max_dw);
 }
 
+static struct radv_pipeline_key
+radv_generate_compute_pipeline_key(struct radv_pipeline *pipeline,
+				   const VkComputePipelineCreateInfo *pCreateInfo)
+{
+	struct radv_pipeline_key key;
+	memset(&key, 0, sizeof(key));
+
+	if (pCreateInfo->flags & VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT)
+		key.optimisations_disabled = 1;
+
+	return key;
+}
+
 static VkResult radv_compute_pipeline_create(
 	VkDevice                                    _device,
 	VkPipelineCache                             _cache,
@@ -4770,7 +4800,11 @@ static VkResult radv_compute_pipeline_create(
 		stage_feedbacks[MESA_SHADER_COMPUTE] = &creation_feedback->pPipelineStageCreationFeedbacks[0];
 
 	pStages[MESA_SHADER_COMPUTE] = &pCreateInfo->stage;
-	radv_create_shaders(pipeline, device, cache, &(struct radv_pipeline_key) {0}, pStages, pCreateInfo->flags, pipeline_feedback, stage_feedbacks);
+
+	struct radv_pipeline_key key =
+		radv_generate_compute_pipeline_key(pipeline, pCreateInfo);
+
+	radv_create_shaders(pipeline, device, cache, &key, pStages, pCreateInfo->flags, pipeline_feedback, stage_feedbacks);
 
 	pipeline->user_data_0[MESA_SHADER_COMPUTE] = radv_pipeline_stage_to_user_data_0(pipeline, MESA_SHADER_COMPUTE, device->physical_device->rad_info.chip_class);
 	pipeline->need_indirect_descriptor_sets |= pipeline->shaders[MESA_SHADER_COMPUTE]->info.need_indirect_descriptor_sets;

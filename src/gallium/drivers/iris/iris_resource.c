@@ -292,6 +292,7 @@ iris_resource_disable_aux(struct iris_resource *res)
    res->aux.usage = ISL_AUX_USAGE_NONE;
    res->aux.possible_usages = 1 << ISL_AUX_USAGE_NONE;
    res->aux.sampler_usages = 1 << ISL_AUX_USAGE_NONE;
+   res->aux.has_hiz = 0;
    res->aux.surf.size_B = 0;
    res->aux.bo = NULL;
    res->aux.clear_color_bo = NULL;
@@ -716,7 +717,7 @@ iris_resource_create_with_modifiers(struct pipe_screen *pscreen,
    } else {
       if (modifiers_count > 0) {
          fprintf(stderr, "Unsupported modifier, resource creation failed.\n");
-         return NULL;
+         goto fail;
       }
 
       /* No modifiers - we can select our own tiling. */
@@ -738,6 +739,8 @@ iris_resource_create_with_modifiers(struct pipe_screen *pscreen,
       if (templ->usage == PIPE_USAGE_STAGING ||
           templ->bind & (PIPE_BIND_LINEAR | PIPE_BIND_CURSOR) )
          tiling_flags = ISL_TILING_LINEAR_BIT;
+      else if (templ->bind & PIPE_BIND_SCANOUT)
+         tiling_flags = ISL_TILING_X_BIT;
    }
 
    isl_surf_usage_flags_t usage = pipe_bind_to_isl_usage(templ->bind);
@@ -862,8 +865,12 @@ iris_resource_create_with_modifiers(struct pipe_screen *pscreen,
       }
    }
 
-   if (!aux_enabled)
-      iris_resource_disable_aux(res);
+   if (!aux_enabled) {
+      if (res->mod_info && res->mod_info->aux_usage != ISL_AUX_USAGE_NONE)
+         goto fail;
+      else
+         iris_resource_disable_aux(res);
+   }
 
    return &res->base;
 
@@ -1078,9 +1085,13 @@ iris_resource_get_param(struct pipe_screen *screen,
    bool mod_with_aux =
       res->mod_info && res->mod_info->aux_usage != ISL_AUX_USAGE_NONE;
    bool wants_aux = mod_with_aux && plane > 0;
-   struct iris_bo *bo = wants_aux ? res->aux.bo : res->bo;
    bool result;
    unsigned handle;
+
+   if (iris_resource_unfinished_aux_import(res))
+      iris_resource_finish_aux_import(screen, res);
+
+   struct iris_bo *bo = wants_aux ? res->aux.bo : res->bo;
 
    iris_resource_disable_aux_on_first_query(resource, handle_usage);
 

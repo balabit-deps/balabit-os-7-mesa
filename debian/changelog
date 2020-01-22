@@ -1,3 +1,14 @@
+mesa (19.2.8-0ubuntu0~18.04.1) bionic; urgency=medium
+
+  * New bugfix release. (LP: #1860522)
+  * Revert-meson-fix-logic-for-generating-.pc-files-with.patch:
+    Dropped, fixed upstream.
+  * rules: GLESv2 libs aren't built anymore, drop removing them.
+  * mesa-common-dev: Drop mangled GL/GLX headers, they're not generated
+    anymore.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 22 Jan 2020 11:57:11 +0200
+
 mesa (19.2.1-1ubuntu1~18.04.1) bionic; urgency=medium
 
   * Backport to bionic for 18.04.4 HWE stack update. (LP: #1848522)

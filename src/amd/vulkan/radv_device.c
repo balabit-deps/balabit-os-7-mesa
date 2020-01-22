@@ -34,7 +34,6 @@
 #include "radv_shader.h"
 #include "radv_cs.h"
 #include "util/disk_cache.h"
-#include "util/strtod.h"
 #include "vk_util.h"
 #include <xf86drm.h>
 #include <amdgpu.h>
@@ -686,7 +685,6 @@ VkResult radv_CreateInstance(
 					 VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
 	instance->engineVersion = engine_version;
 
-	_mesa_locale_init();
 	glsl_type_singleton_init_or_ref();
 
 	VG(VALGRIND_CREATE_MEMPOOL(instance, 0, false));
@@ -717,7 +715,6 @@ void radv_DestroyInstance(
 	VG(VALGRIND_DESTROY_MEMPOOL(instance));
 
 	glsl_type_singleton_decref();
-	_mesa_locale_fini();
 
 	driDestroyOptionCache(&instance->dri_options);
 	driDestroyOptionInfo(&instance->available_dri_options);
@@ -1078,6 +1075,24 @@ void radv_GetPhysicalDeviceFeatures2(
 	return radv_GetPhysicalDeviceFeatures(physicalDevice, &pFeatures->features);
 }
 
+static size_t
+radv_max_descriptor_set_size()
+{
+	/* make sure that the entire descriptor set is addressable with a signed
+	 * 32-bit int. So the sum of all limits scaled by descriptor size has to
+	 * be at most 2 GiB. the combined image & samples object count as one of
+	 * both. This limit is for the pipeline layout, not for the set layout, but
+	 * there is no set limit, so we just set a pipeline limit. I don't think
+	 * any app is going to hit this soon. */
+	return ((1ull << 31) - 16 * MAX_DYNAMIC_BUFFERS
+	                     - MAX_INLINE_UNIFORM_BLOCK_SIZE * MAX_INLINE_UNIFORM_BLOCK_COUNT) /
+	          (32 /* uniform buffer, 32 due to potential space wasted on alignment */ +
+	           32 /* storage buffer, 32 due to potential space wasted on alignment */ +
+	           32 /* sampler, largest when combined with image */ +
+	           64 /* sampled image */ +
+	           64 /* storage image */);
+}
+
 void radv_GetPhysicalDeviceProperties(
 	VkPhysicalDevice                            physicalDevice,
 	VkPhysicalDeviceProperties*                 pProperties)
@@ -1085,18 +1100,7 @@ void radv_GetPhysicalDeviceProperties(
 	RADV_FROM_HANDLE(radv_physical_device, pdevice, physicalDevice);
 	VkSampleCountFlags sample_counts = 0xf;
 
-	/* make sure that the entire descriptor set is addressable with a signed
-	 * 32-bit int. So the sum of all limits scaled by descriptor size has to
-	 * be at most 2 GiB. the combined image & samples object count as one of
-	 * both. This limit is for the pipeline layout, not for the set layout, but
-	 * there is no set limit, so we just set a pipeline limit. I don't think
-	 * any app is going to hit this soon. */
-	size_t max_descriptor_set_size = ((1ull << 31) - 16 * MAX_DYNAMIC_BUFFERS) /
-	          (32 /* uniform buffer, 32 due to potential space wasted on alignment */ +
-	           32 /* storage buffer, 32 due to potential space wasted on alignment */ +
-	           32 /* sampler, largest when combined with image */ +
-	           64 /* sampled image */ +
-	           64 /* storage image */);
+	size_t max_descriptor_set_size = radv_max_descriptor_set_size();
 
 	VkPhysicalDeviceLimits limits = {
 		.maxImageDimension1D                      = (1 << 14),
@@ -1170,7 +1174,7 @@ void radv_GetPhysicalDeviceProperties(
 		.viewportBoundsRange                      = { INT16_MIN, INT16_MAX },
 		.viewportSubPixelBits                     = 8,
 		.minMemoryMapAlignment                    = 4096, /* A page */
-		.minTexelBufferOffsetAlignment            = 1,
+		.minTexelBufferOffsetAlignment            = 4,
 		.minUniformBufferOffsetAlignment          = 4,
 		.minStorageBufferOffsetAlignment          = 4,
 		.minTexelOffset                           = -32,
@@ -1365,13 +1369,7 @@ void radv_GetPhysicalDeviceProperties2(
 			properties->robustBufferAccessUpdateAfterBind = false;
 			properties->quadDivergentImplicitLod = false;
 
-			size_t max_descriptor_set_size = ((1ull << 31) - 16 * MAX_DYNAMIC_BUFFERS -
-				MAX_INLINE_UNIFORM_BLOCK_SIZE * MAX_INLINE_UNIFORM_BLOCK_COUNT) /
-			          (32 /* uniform buffer, 32 due to potential space wasted on alignment */ +
-			           32 /* storage buffer, 32 due to potential space wasted on alignment */ +
-			           32 /* sampler, largest when combined with image */ +
-			           64 /* sampled image */ +
-			           64 /* storage image */);
+			size_t max_descriptor_set_size = radv_max_descriptor_set_size();
 			properties->maxPerStageDescriptorUpdateAfterBindSamplers = max_descriptor_set_size;
 			properties->maxPerStageDescriptorUpdateAfterBindUniformBuffers = max_descriptor_set_size;
 			properties->maxPerStageDescriptorUpdateAfterBindStorageBuffers = max_descriptor_set_size;
@@ -2057,12 +2055,9 @@ VkResult radv_CreateDevice(
 		device->empty_cs[family] = device->ws->cs_create(device->ws, family);
 		switch (family) {
 		case RADV_QUEUE_GENERAL:
-		      /* Since amdgpu version 3.6.0, CONTEXT_CONTROL is emitted by the kernel */
-			if (device->physical_device->rad_info.drm_minor < 6) {
-				radeon_emit(device->empty_cs[family], PKT3(PKT3_CONTEXT_CONTROL, 1, 0));
-				radeon_emit(device->empty_cs[family], CONTEXT_CONTROL_LOAD_ENABLE(1));
-				radeon_emit(device->empty_cs[family], CONTEXT_CONTROL_SHADOW_ENABLE(1));
-			}
+			radeon_emit(device->empty_cs[family], PKT3(PKT3_CONTEXT_CONTROL, 1, 0));
+			radeon_emit(device->empty_cs[family], CONTEXT_CONTROL_LOAD_ENABLE(1));
+			radeon_emit(device->empty_cs[family], CONTEXT_CONTROL_SHADOW_ENABLE(1));
 			break;
 		case RADV_QUEUE_COMPUTE:
 			radeon_emit(device->empty_cs[family], PKT3(PKT3_NOP, 0, 0));
