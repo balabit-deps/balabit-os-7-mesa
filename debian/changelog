@@ -1,3 +1,10 @@
+mesa (19.2.8-0ubuntu0~18.04.3) bionic; urgency=medium
+
+  * i965-sync-pciids.diff: Add back three pci-id's for CML that were
+    lost during a rebase. (LP: #1863724)
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 19 Feb 2020 07:09:44 +0200
+
 mesa (19.2.8-0ubuntu0~18.04.2) bionic-security; urgency=medium
 
   * No-change rebuild in the -security pocket.
