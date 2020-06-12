@@ -1,9 +1,15 @@
 07_gallium-fix-build-failure-on-powerpcspe.diff
+fix-python-shebang.diff
+path_max.diff
+fix-ppc64el.patch
+src_glx_dri_common.h.diff
 
 # Ubuntu patches.
 dont-enable-10bpc-by-default.diff
-disable-intel-ccs-compression.diff
-revert-set-full-thread-affinity.diff
-i965-sync-pciids.diff
 Revert-meson-drop-Wno-foo-bug-workaround.diff
 Revert-meson-bump-required-version-to-0.46.diff
+Revert-meson-revert-glvnd-workaround.patch
+Revert-meson-Test-for-Wl-build-id-sha1.diff
+revert-requiring-new-libglvnd.diff
+build-glesv2-pc.diff
+Revert-meson-Use-dependency.partial_dependency.patch

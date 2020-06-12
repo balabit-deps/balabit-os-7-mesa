@@ -1,0 +1,30 @@
+From dfed42b838cdb31041e16594a7c86558509ff5f4 Mon Sep 17 00:00:00 2001
+From: Timo Aaltonen <tjaalton@debian.org>
+Date: Thu, 7 May 2020 13:42:00 +0300
+Subject: [PATCH] Revert "meson: Test for -Wl,--build-id=sha1"
+
+This reverts commit c0330461c9a8fcc86227489b35ff143e5d7ee2ab.
+---
+ meson.build | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index c48945b3c48..bea95b55fb7 100644
+--- a/meson.build
++++ b/meson.build
+@@ -1230,8 +1230,10 @@ if cc.links('int main() { return 0; }',
+             name : 'dynamic-list')
+   with_ld_dynamic_list = true
+ endif
+-
+-ld_args_build_id = cc.get_supported_link_arguments('-Wl,--build-id=sha1')
++ld_args_build_id = []
++if build_machine.system() != 'darwin'
++   ld_args_build_id += '-Wl,--build-id=sha1'
++endif
+ 
+ # check for dl support
+ dep_dl = null_dep
+-- 
+2.25.1
+

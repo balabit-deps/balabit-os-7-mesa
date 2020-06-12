@@ -1,0 +1,72 @@
+From 12eae7c2b8f12a70063a49e1d1a09c68dae7d232 Mon Sep 17 00:00:00 2001
+From: Timo Aaltonen <tjaalton@debian.org>
+Date: Mon, 15 Jun 2020 13:26:50 +0300
+Subject: [PATCH] Revert "meson: Use dependency.partial_dependency()"
+
+This reverts commit a2776c24c7bb3a203b94b4c8e31864263c63bfc4.
+---
+ .pick_status.json |  2 +-
+ meson.build       | 13 ++++++++++---
+ 2 files changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/.pick_status.json b/.pick_status.json
+index ca9b2c0492c..2999c4b318e 100644
+--- a/.pick_status.json
++++ b/.pick_status.json
+@@ -18067,7 +18067,7 @@
+         "description": "meson: Use dependency.partial_dependency()",
+         "nominated": true,
+         "nomination_type": 1,
+-        "resolution": 1,
++        "resolution": 0,
+         "master_sha": null,
+         "because_sha": "53f9131205a63fa8b282ab2a7e96c48209447da0"
+     },
+diff --git a/meson.build b/meson.build
+index eaaca7f13aa..d98cff3100d 100644
+--- a/meson.build
++++ b/meson.build
+@@ -455,6 +455,8 @@ if with_dri
+   endif
+ endif
+ 
++prog_pkgconfig = find_program('pkg-config')
++
+ _vdpau = get_option('gallium-vdpau')
+ if not system_has_kms_drm
+   if _vdpau == 'true'
+@@ -481,7 +483,9 @@ with_gallium_vdpau = false
+ if _vdpau != 'false'
+   dep_vdpau = dependency('vdpau', version : '>= 1.1', required : _vdpau == 'true')
+   if dep_vdpau.found()
+-    dep_vdpau = dep_vdpau.partial_dependency(compile_args : true)
++    dep_vdpau = declare_dependency(
++      compile_args : run_command(prog_pkgconfig, ['vdpau', '--cflags']).stdout().split()
++    )
+     with_gallium_vdpau = true
+   endif
+ endif
+@@ -631,7 +635,9 @@ dep_va = null_dep
+ if _va != 'false'
+   dep_va = dependency('libva', version : '>= 0.38.0', required : _va == 'true')
+   if dep_va.found()
+-    dep_va_headers = dep_va.partial_dependency(compile_args : true)
++    dep_va_headers = declare_dependency(
++      compile_args : run_command(prog_pkgconfig, ['libva', '--cflags']).stdout().split()
++    )
+     with_gallium_va = true
+   endif
+ endif
+@@ -1563,7 +1569,8 @@ if with_platform_wayland
+   dep_wayland_server = dependency('wayland-server', version : '>=1.11')
+   if with_egl
+     dep_wayland_egl = dependency('wayland-egl-backend', version : '>= 3')
+-    dep_wayland_egl_headers = dep_wayland_egl.partial_dependency(compile_args : true)
++    dep_wayland_egl_headers = declare_dependency(
++      compile_args : run_command(prog_pkgconfig, ['wayland-egl-backend', '--cflags']).stdout().split())
+   endif
+   wayland_dmabuf_xml = join_paths(
+     dep_wl_protocols.get_pkgconfig_variable('pkgdatadir'), 'unstable',
+-- 
+2.25.1
+

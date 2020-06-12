@@ -1,0 +1,11 @@
+--- a/src/mapi/meson.build
++++ b/src/mapi/meson.build
+@@ -35,7 +35,7 @@ if with_shared_glapi
+ else
+   libglapi = []
+ endif
+-if not with_glvnd
++if not glvnd_has_headers_and_pc_files
+   if with_gles1
+     subdir('es1api')
+   endif

@@ -1,0 +1,103 @@
+From 6840f6b5c1a8bab4959bb60000249753f2765850 Mon Sep 17 00:00:00 2001
+From: Timo Aaltonen <tjaalton@debian.org>
+Date: Thu, 7 May 2020 14:15:11 +0300
+Subject: [PATCH] Revert "meson: revert glvnd workaround"
+
+This reverts commit 6e21dcc5a31634232660eff1a83052c2ebb4816c.
+---
+ include/meson.build |  2 +-
+ meson.build         |  4 ++++
+ src/egl/meson.build | 13 +++++++++++--
+ src/meson.build     | 14 ++++++++++++--
+ 4 files changed, 28 insertions(+), 5 deletions(-)
+
+diff --git a/include/meson.build b/include/meson.build
+index bddbd67d328..4d73aef9ce3 100644
+--- a/include/meson.build
++++ b/include/meson.build
+@@ -22,7 +22,7 @@ inc_include = include_directories('.')
+ inc_d3d9 = include_directories('D3D9')
+ inc_haikugl = include_directories('HaikuGL')
+ 
+-if not with_glvnd
++if not glvnd_has_headers_and_pc_files
+   if with_gles1 or with_gles2 or with_opengl or with_egl
+     install_headers('KHR/khrplatform.h', subdir : 'KHR')
+   endif
+diff --git a/meson.build b/meson.build
+index c48945b3c48..879426d212d 100644
+--- a/meson.build
++++ b/meson.build
+@@ -1469,8 +1469,12 @@ else
+ endif
+ 
+ dep_glvnd = null_dep
++glvnd_has_headers_and_pc_files = false
+ if with_glvnd
+   dep_glvnd = dependency('libglvnd', version : '>= 1.2.0')
++  # GLVND before 1.2 was missing its pkg-config and header files, forcing every
++  # vendor to provide them and the distro maintainers to resolve the conflict.
++  glvnd_has_headers_and_pc_files = dep_glvnd.version().version_compare('>= 1.2.0')
+   pre_args += '-DUSE_LIBGLVND=1'
+ endif
+ 
+diff --git a/src/egl/meson.build b/src/egl/meson.build
+index 12d74ec37fa..693de9c8c05 100644
+--- a/src/egl/meson.build
++++ b/src/egl/meson.build
+@@ -174,12 +174,21 @@ libegl = shared_library(
+   version : egl_lib_version,
+ )
+ 
+-if not with_glvnd
++# If using glvnd the pkg-config header should not point to EGL_mesa, it should
++# point to EGL. glvnd is only available on unix like platforms so adding -l
++# should be safe here
++if not with_glvnd or not glvnd_has_headers_and_pc_files
++  if not glvnd_has_headers_and_pc_files
++    _egl = '-L${libdir} -lEGL'
++  else
++    _egl = libegl
++  endif
++
+   pkg.generate(
+     name : 'egl',
+     description : 'Mesa EGL Library',
+     version : meson.project_version(),
+-    libraries : libegl,
++    libraries : _egl,
+     libraries_private: gl_priv_libs,
+     requires_private : gl_priv_reqs,
+     extra_cflags : gl_pkgconfig_c_flags,
+diff --git a/src/meson.build b/src/meson.build
+index 53b999ad22a..1463d7b261f 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -114,12 +114,22 @@ endif
+ 
+ # This must be after at least mesa, glx, and gallium, since libgl will be
+ # defined in one of those subdirs depending on the glx provider.
+-if with_glx != 'disabled' and not with_glvnd
++if with_glx != 'disabled' and (not with_glvnd or not glvnd_has_headers_and_pc_files)
++  # If using glvnd the pkg-config header should not point to GL_mesa, it should
++  # point to GL. glvnd is only available on unix like platforms so adding -l
++  # should be safe here
++  # TODO: in the glvnd case glvnd itself should really be providing this.
++  if not glvnd_has_headers_and_pc_files
++    _gl = '-L${libdir} -lGL'
++  else
++    _gl = libgl
++  endif
++
+   pkg.generate(
+     name : 'gl',
+     description : 'Mesa OpenGL Library',
+     version : meson.project_version(),
+-    libraries : libgl,
++    libraries : _gl,
+     libraries_private : gl_priv_libs,
+     requires_private : gl_priv_reqs,
+     variables : ['glx_tls=yes'],
+-- 
+2.25.1
+
